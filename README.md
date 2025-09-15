@@ -12,15 +12,16 @@ flutter run --dart-define=SUPABASE_URL=your_url --dart-define=SUPABASE_ANON_KEY=
 
 CI runs analyze, tests, and a debug build via GitHub Actions.
 
-## Getting Started
+## Release builds
 
-This project is a starting point for a Flutter application.
+### Android APK
+- Run: `flutter build apk --release`
+- Output: `build/app/outputs/flutter-apk/app-release.apk`
 
-A few resources to get you started if this is your first Flutter project:
+### iOS (guide)
+1. Open `ios/Runner.xcworkspace` in Xcode
+2. Set a unique bundle id and signing team
+3. Product → Archive, then Distribute App (TestFlight/App Store)
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+Optional env defines (for backend later):
+`flutter run --dart-define=SUPABASE_URL= --dart-define=SUPABASE_ANON_KEY=`

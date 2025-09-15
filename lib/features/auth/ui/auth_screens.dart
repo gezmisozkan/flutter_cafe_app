@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../data/auth_store.dart';
 import '../../profile/data/profile_store.dart';
 
@@ -40,6 +41,12 @@ class _SignInScreenState extends ConsumerState<SignInScreen> {
     ref
         .read(profileStoreProvider.notifier)
         .loadFor(session.userId, session.email);
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Signed in')));
+      context.go('/home');
+    }
   }
 
   @override
@@ -126,51 +133,97 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       appBar: AppBar(title: const Text('Profile')),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            TextFormField(
-              controller: _name,
-              decoration: const InputDecoration(labelText: 'Name'),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _phone,
-              decoration: const InputDecoration(labelText: 'Phone'),
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _fav,
-              decoration: const InputDecoration(labelText: 'Favorite drink'),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(profile.email),
-                ElevatedButton(
-                  onPressed: () {
-                    ref
-                        .read(profileStoreProvider.notifier)
-                        .update(
-                          name: _name.text.trim().isEmpty
-                              ? null
-                              : _name.text.trim(),
-                          phone: _phone.text.trim().isEmpty
-                              ? null
-                              : _phone.text.trim(),
-                          favoriteDrink: _fav.text.trim().isEmpty
-                              ? null
-                              : _fav.text.trim(),
+        child: Form(
+          autovalidateMode: AutovalidateMode.onUserInteraction,
+          child: Column(
+            children: [
+              TextFormField(
+                controller: _name,
+                decoration: const InputDecoration(labelText: 'Name'),
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Name is required' : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _phone,
+                decoration: const InputDecoration(labelText: 'Phone'),
+                keyboardType: TextInputType.phone,
+                validator: (v) => (v == null || v.trim().length < 7)
+                    ? 'Enter a valid phone'
+                    : null,
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _fav,
+                decoration: const InputDecoration(labelText: 'Favorite drink'),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(profile.email),
+                  ElevatedButton(
+                    onPressed: () {
+                      final formState = Form.of(context);
+                      if (!formState.validate()) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Fix validation errors'),
+                          ),
                         );
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(const SnackBar(content: Text('Saved')));
-                  },
-                  child: const Text('Save'),
-                ),
-              ],
-            ),
-          ],
+                        return;
+                      }
+                      try {
+                        ref
+                            .read(profileStoreProvider.notifier)
+                            .update(
+                              name: _name.text.trim().isEmpty
+                                  ? null
+                                  : _name.text.trim(),
+                              phone: _phone.text.trim().isEmpty
+                                  ? null
+                                  : _phone.text.trim(),
+                              favoriteDrink: _fav.text.trim().isEmpty
+                                  ? null
+                                  : _fav.text.trim(),
+                            );
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(const SnackBar(content: Text('Saved')));
+                      } catch (e) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: const Text('Save failed'),
+                            action: SnackBarAction(
+                              label: 'Retry',
+                              onPressed: () {
+                                try {
+                                  ref
+                                      .read(profileStoreProvider.notifier)
+                                      .update(
+                                        name: _name.text.trim().isEmpty
+                                            ? null
+                                            : _name.text.trim(),
+                                        phone: _phone.text.trim().isEmpty
+                                            ? null
+                                            : _phone.text.trim(),
+                                        favoriteDrink: _fav.text.trim().isEmpty
+                                            ? null
+                                            : _fav.text.trim(),
+                                      );
+                                } catch (_) {}
+                              },
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                    child: const Text('Save'),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

@@ -59,18 +59,39 @@ class _ItemDetailScreenState extends ConsumerState<ItemDetailScreen> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () {
-                  ref
-                      .read(cartStoreProvider.notifier)
-                      .add(
-                        widget.item,
-                        note: _noteController.text.isEmpty
-                            ? null
-                            : _noteController.text,
-                      );
-                  Navigator.of(context).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Added to cart')),
-                  );
+                  void add() {
+                    ref
+                        .read(cartStoreProvider.notifier)
+                        .add(
+                          widget.item,
+                          note: _noteController.text.isEmpty
+                              ? null
+                              : _noteController.text,
+                        );
+                  }
+
+                  try {
+                    add();
+                    Navigator.of(context).pop();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Added to cart')),
+                    );
+                  } catch (e) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: const Text('Failed to add to cart'),
+                        action: SnackBarAction(
+                          label: 'Retry',
+                          onPressed: () {
+                            try {
+                              add();
+                              Navigator.of(context).pop();
+                            } catch (_) {}
+                          },
+                        ),
+                      ),
+                    );
+                  }
                 },
                 child: const Text('Add to cart'),
               ),

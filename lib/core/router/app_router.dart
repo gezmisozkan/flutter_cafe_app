@@ -11,7 +11,6 @@ import '../../features/menu/domain/models.dart';
 import '../../features/menu/ui/item_detail.dart';
 import '../../features/auth/ui/auth_screens.dart';
 import '../../features/auth/data/auth_store.dart';
-import '../../features/profile/data/profile_store.dart';
 import '../../features/menu/ui/admin_menu.dart';
 import '../../features/admin/data/campaigns_store.dart';
 import '../../widgets/empty_state.dart';
@@ -81,7 +80,7 @@ class _TabShell extends StatelessWidget {
     ('/order', Icons.shopping_bag_outlined, 'Order'),
     ('/card', Icons.credit_card, 'My Card'),
     ('/store', Icons.store_mall_directory_outlined, 'Store'),
-    ('/profile', Icons.person, 'Profile'),
+    ('/more', Icons.person, 'More'),
   ];
 
   int _indexForLocation(BuildContext context) {
@@ -101,80 +100,142 @@ class _TabShell extends StatelessWidget {
         onDestinationSelected: (i) => context.go(_tabs[i].$1),
         destinations: [
           for (final t in _tabs)
-            NavigationDestination(icon: Icon(t.$2), label: t.$3),
+            NavigationDestination(
+              key: ValueKey('tab-${t.$1}'),
+              icon: Icon(t.$2),
+              label: t.$3,
+            ),
         ],
       ),
     );
   }
 }
 
-class _HomeScreen extends StatelessWidget {
+class _HomeScreen extends ConsumerWidget {
   const _HomeScreen();
 
   @override
-  Widget build(BuildContext context) {
-    final campaigns = const [
-      ('Welcome', '10% off first order'),
-      ('New Beans', 'Try our seasonal roast'),
-      ('Rewards', 'Redeem points for free coffee'),
-    ];
+  Widget build(BuildContext context, WidgetRef ref) {
+    final campaigns = ref.watch(campaignsStoreProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('Home')),
-      body: ListView(
-        children: [
-          SizedBox(
-            height: 140,
-            child: ListView.separated(
-              padding: const EdgeInsets.all(16),
-              scrollDirection: Axis.horizontal,
-              itemBuilder: (context, i) {
-                final c = campaigns[i];
-                return SizedBox(
-                  width: 240,
-                  child: Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            c.$1,
-                            style: Theme.of(context).textTheme.titleMedium,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            c.$2,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
+      appBar: AppBar(
+        title: const Text('Home'),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh campaigns',
+            icon: const Icon(Icons.refresh),
+            onPressed: () {
+              try {
+                // For mock: if empty, add a default; otherwise show a message
+                if (ref.read(campaignsStoreProvider).isEmpty) {
+                  ref
+                      .read(campaignsStoreProvider.notifier)
+                      .add('Welcome', '10% off first order');
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Campaigns refreshed')),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Campaigns up to date')),
+                  );
+                }
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: const Text('Failed to refresh campaigns'),
+                    action: SnackBarAction(
+                      label: 'Retry',
+                      onPressed: () {
+                        try {
+                          ref
+                              .read(campaignsStoreProvider.notifier)
+                              .add('Welcome', '10% off first order');
+                        } catch (_) {}
+                      },
                     ),
                   ),
                 );
-              },
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
-              itemCount: campaigns.length,
-            ),
+              }
+            },
           ),
+        ],
+      ),
+      body: ListView(
+        children: [
+          if (campaigns.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: EmptyState(
+                message: 'No campaigns right now',
+                icon: Icons.campaign_outlined,
+              ),
+            )
+          else
+            SizedBox(
+              height: 140,
+              child: ListView.separated(
+                padding: const EdgeInsets.all(16),
+                scrollDirection: Axis.horizontal,
+                itemBuilder: (context, i) {
+                  final c = campaigns[i];
+                  return SizedBox(
+                    width: 240,
+                    child: Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              c.title,
+                              style: Theme.of(context).textTheme.titleMedium,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              c.body,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                },
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemCount: campaigns.length,
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
+            child: Column(
               children: [
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => context.go('/order'),
-                    child: const Text('Order'),
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => context.go('/order'),
+                        child: const Text('Order'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () => context.go('/card'),
+                        child: const Text('My Card'),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () => context.go('/card'),
-                    child: const Text('My Card'),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () => context.go('/more'),
+                    child: const Text('More'),
                   ),
                 ),
               ],
@@ -196,7 +257,43 @@ class _OrderScreen extends ConsumerWidget {
     final cart = ref.watch(cartStoreProvider);
     final currency = (int cents) => '₺ ${(cents / 100).toStringAsFixed(2)}';
     return Scaffold(
-      appBar: AppBar(title: const Text('Order')),
+      appBar: AppBar(
+        title: const Text('Order'),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh Menu',
+            icon: const Icon(Icons.refresh),
+            onPressed: () async {
+              try {
+                await ref.read(menuStoreProvider.notifier).refreshMenu();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Menu refreshed')),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Text('Failed to refresh menu'),
+                      action: SnackBarAction(
+                        label: 'Retry',
+                        onPressed: () async {
+                          try {
+                            await ref
+                                .read(menuStoreProvider.notifier)
+                                .refreshMenu();
+                          } catch (_) {}
+                        },
+                      ),
+                    ),
+                  );
+                }
+              }
+            },
+          ),
+        ],
+      ),
       body: Column(
         children: [
           SizedBox(
@@ -240,9 +337,43 @@ class _OrderScreen extends ConsumerWidget {
                                 subtitle: Text(currency(m.priceCents)),
                                 trailing: IconButton(
                                   icon: const Icon(Icons.add_circle_outline),
-                                  onPressed: () => ref
-                                      .read(cartStoreProvider.notifier)
-                                      .add(m),
+                                  onPressed: () {
+                                    try {
+                                      ref
+                                          .read(cartStoreProvider.notifier)
+                                          .add(m);
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Added to cart'),
+                                        ),
+                                      );
+                                    } catch (e) {
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: const Text(
+                                            'Failed to add to cart',
+                                          ),
+                                          action: SnackBarAction(
+                                            label: 'Retry',
+                                            onPressed: () {
+                                              try {
+                                                ref
+                                                    .read(
+                                                      cartStoreProvider
+                                                          .notifier,
+                                                    )
+                                                    .add(m);
+                                              } catch (_) {}
+                                            },
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  },
                                 ),
                               ),
                           ],
@@ -258,6 +389,7 @@ class _OrderScreen extends ConsumerWidget {
           title: const Text('Cart total'),
           subtitle: Text(currency(cart.totalCents)),
           trailing: ElevatedButton(
+            key: const ValueKey('btn-view-cart'),
             onPressed: cart.items.isEmpty
                 ? null
                 : () => _showCartSheet(context, ref),
@@ -332,6 +464,7 @@ Future<void> _showCartSheet(BuildContext context, WidgetRef ref) async {
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       ElevatedButton(
+                        key: const ValueKey('btn-place-order'),
                         onPressed: cart.items.isEmpty
                             ? null
                             : () {
@@ -513,17 +646,79 @@ void _showAdminPanel(BuildContext context, WidgetRef ref) {
                     ElevatedButton(
                       onPressed: o.status == OrderStatus.ready
                           ? null
-                          : () => ref
-                                .read(ordersStoreProvider.notifier)
-                                .updateStatus(o.id, OrderStatus.ready),
+                          : () {
+                              try {
+                                ref
+                                    .read(ordersStoreProvider.notifier)
+                                    .updateStatus(o.id, OrderStatus.ready);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Marked ready')),
+                                );
+                              } catch (e) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: const Text(
+                                      'Failed to update status',
+                                    ),
+                                    action: SnackBarAction(
+                                      label: 'Retry',
+                                      onPressed: () {
+                                        try {
+                                          ref
+                                              .read(
+                                                ordersStoreProvider.notifier,
+                                              )
+                                              .updateStatus(
+                                                o.id,
+                                                OrderStatus.ready,
+                                              );
+                                        } catch (_) {}
+                                      },
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
                       child: const Text('Ready'),
                     ),
                     ElevatedButton(
                       onPressed: o.status == OrderStatus.completed
                           ? null
-                          : () => ref
-                                .read(ordersStoreProvider.notifier)
-                                .updateStatus(o.id, OrderStatus.completed),
+                          : () {
+                              try {
+                                ref
+                                    .read(ordersStoreProvider.notifier)
+                                    .updateStatus(o.id, OrderStatus.completed);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Marked completed'),
+                                  ),
+                                );
+                              } catch (e) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: const Text(
+                                      'Failed to update status',
+                                    ),
+                                    action: SnackBarAction(
+                                      label: 'Retry',
+                                      onPressed: () {
+                                        try {
+                                          ref
+                                              .read(
+                                                ordersStoreProvider.notifier,
+                                              )
+                                              .updateStatus(
+                                                o.id,
+                                                OrderStatus.completed,
+                                              );
+                                        } catch (_) {}
+                                      },
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
                       child: const Text('Complete'),
                     ),
                   ],
@@ -575,14 +770,37 @@ class _ScanEarnFormState extends ConsumerState<_ScanEarnForm> {
         const SizedBox(width: 8),
         ElevatedButton(
           onPressed: () {
+            final userId = idCtrl.text.trim();
             final pts = int.tryParse(ptsCtrl.text) ?? 0;
-            if (pts > 0) {
+            if (userId.isEmpty || pts <= 0) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Enter user and positive points')),
+              );
+              return;
+            }
+            try {
               ref
                   .read(loyaltyStoreProvider.notifier)
                   .earn(pts, reason: 'Admin manual earn');
               ScaffoldMessenger.of(
                 context,
               ).showSnackBar(const SnackBar(content: Text('Points added')));
+            } catch (e) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('Failed to add points'),
+                  action: SnackBarAction(
+                    label: 'Retry',
+                    onPressed: () {
+                      try {
+                        ref
+                            .read(loyaltyStoreProvider.notifier)
+                            .earn(pts, reason: 'Admin manual earn');
+                      } catch (_) {}
+                    },
+                  ),
+                ),
+              );
             }
           },
           child: const Text('Add'),
@@ -646,57 +864,7 @@ class _CampaignsFormState extends ConsumerState<_CampaignsForm> {
   }
 }
 
-class _OrdersHistoryScreen extends ConsumerWidget {
-  const _OrdersHistoryScreen();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final orders = ref.watch(ordersStoreProvider).orders.reversed.toList();
-    String statusLabel(OrderStatus s) {
-      switch (s) {
-        case OrderStatus.pending:
-          return 'Pending';
-        case OrderStatus.ready:
-          return 'Ready';
-        case OrderStatus.completed:
-          return 'Completed';
-        case OrderStatus.canceled:
-          return 'Canceled';
-      }
-    }
-
-    String currency(int cents) => '₺ ${(cents / 100).toStringAsFixed(2)}';
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('Orders')),
-      body: orders.isEmpty
-          ? const EmptyState(message: 'No orders yet', icon: Icons.receipt_long)
-          : ListView.builder(
-              itemCount: orders.length,
-              itemBuilder: (context, i) {
-                final o = orders[i];
-                return ExpansionTile(
-                  title: Text('#${o.id} • ${statusLabel(o.status)}'),
-                  subtitle: Text(
-                    '${o.createdAt} • Total ${currency(o.totalCents)}',
-                  ),
-                  children: [
-                    for (final it in o.items)
-                      ListTile(
-                        dense: true,
-                        title: Text('${it.name} x${it.qty}'),
-                        subtitle: it.note == null ? null : Text(it.note!),
-                        trailing: Text(
-                          currency(it.priceCentsSnapshot * it.qty),
-                        ),
-                      ),
-                  ],
-                );
-              },
-            ),
-    );
-  }
-}
+// _OrdersHistoryScreen was unused; removed for now.
 
 class _MyCardScreen extends ConsumerWidget {
   const _MyCardScreen();
@@ -774,7 +942,7 @@ final fakeUserIdProvider = Provider<String>((ref) => 'user-1234');
 
 Future<void> _showRedeem(BuildContext context, WidgetRef ref) async {
   final store = ref.read(loyaltyStoreProvider);
-  await showModalBottomSheet(
+  await showModalBottomSheet<void>(
     context: context,
     showDragHandle: true,
     builder: (context) {
@@ -800,7 +968,11 @@ Future<void> _showRedeem(BuildContext context, WidgetRef ref) async {
                             );
                           }
                         }
-                      : null,
+                      : () {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Not enough points')),
+                          );
+                        },
                   child: const Text('Redeem'),
                 ),
               ),
