@@ -68,6 +68,24 @@ class OrdersStore extends StateNotifier<OrdersState> {
     );
     state = OrdersState(orders: [...state.orders, order]);
   }
+
+  void updateStatus(String orderId, OrderStatus status) {
+    final next = [
+      for (final o in state.orders)
+        if (o.id == orderId)
+          UserOrder(
+            id: o.id,
+            status: status,
+            pickupMinutesFromNow: o.pickupMinutesFromNow,
+            totalCents: o.totalCents,
+            createdAt: o.createdAt,
+            items: o.items,
+          )
+        else
+          o,
+    ];
+    state = OrdersState(orders: next);
+  }
 }
 
 final ordersStoreProvider = StateNotifierProvider<OrdersStore, OrdersState>((

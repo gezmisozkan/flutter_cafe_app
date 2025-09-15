@@ -1,17 +1,33 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../widgets/qr_box.dart';
 import '../../features/loyalty/data/loyalty_store.dart';
 import '../../features/menu/data/menu_store.dart';
 import '../../features/cart/data/cart_store.dart';
 import '../../features/orders/data/orders_store.dart';
 import '../../features/menu/domain/models.dart';
+import '../../features/menu/ui/item_detail.dart';
+import '../../features/auth/ui/auth_screens.dart';
+import '../../features/auth/data/auth_store.dart';
+import '../../features/profile/data/profile_store.dart';
+import '../../features/menu/ui/admin_menu.dart';
+import '../../features/admin/data/campaigns_store.dart';
+import '../../widgets/empty_state.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/home',
     routes: [
+      GoRoute(
+        path: '/signin',
+        builder: (context, state) => const SignInScreen(),
+      ),
+      GoRoute(
+        path: '/profile',
+        builder: (context, state) => const ProfileScreen(),
+      ),
       ShellRoute(
         builder: (context, state, child) => _TabShell(child: child),
         routes: [
@@ -24,6 +40,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             path: '/order',
             pageBuilder: (context, state) =>
                 const NoTransitionPage(child: _OrderScreen()),
+          ),
+          GoRoute(
+            path: '/item/:id',
+            builder: (context, state) {
+              final menu = ref.read(menuStoreProvider);
+              final id = state.pathParameters['id']!;
+              final item = findItemById(menu, id);
+              return ItemDetailScreen(item: item!);
+            },
           ),
           GoRoute(
             path: '/card',
@@ -56,7 +81,7 @@ class _TabShell extends StatelessWidget {
     ('/order', Icons.shopping_bag_outlined, 'Order'),
     ('/card', Icons.credit_card, 'My Card'),
     ('/store', Icons.store_mall_directory_outlined, 'Store'),
-    ('/more', Icons.more_horiz, 'More'),
+    ('/profile', Icons.person, 'Profile'),
   ];
 
   int _indexForLocation(BuildContext context) {
@@ -88,22 +113,75 @@ class _HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final campaigns = const [
+      ('Welcome', '10% off first order'),
+      ('New Beans', 'Try our seasonal roast'),
+      ('Rewards', 'Redeem points for free coffee'),
+    ];
     return Scaffold(
       appBar: AppBar(title: const Text('Home')),
-      body: Center(
-        child: Wrap(
-          spacing: 12,
-          children: [
-            ElevatedButton(
-              onPressed: () => context.go('/order'),
-              child: const Text('Order'),
+      body: ListView(
+        children: [
+          SizedBox(
+            height: 140,
+            child: ListView.separated(
+              padding: const EdgeInsets.all(16),
+              scrollDirection: Axis.horizontal,
+              itemBuilder: (context, i) {
+                final c = campaigns[i];
+                return SizedBox(
+                  width: 240,
+                  child: Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            c.$1,
+                            style: Theme.of(context).textTheme.titleMedium,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            c.$2,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemCount: campaigns.length,
             ),
-            ElevatedButton(
-              onPressed: () => context.go('/card'),
-              child: const Text('My Card'),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => context.go('/order'),
+                    child: const Text('Order'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => context.go('/card'),
+                    child: const Text('My Card'),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 24),
+        ],
       ),
     );
   }
@@ -135,38 +213,42 @@ class _OrderScreen extends ConsumerWidget {
             ),
           ),
           Expanded(
-            child: ListView(
-              children: [
-                for (final c in menu.categories)
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            child: menu.categories.isEmpty
+                ? const EmptyState(message: 'No menu available')
+                : ListView(
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
-                        ),
-                        child: Text(
-                          c.name,
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                      ),
-                      for (final m
-                          in (menu.itemsByCategory[c.id] ??
-                              const <MenuItemModel>[]))
-                        ListTile(
-                          title: Text(m.name),
-                          subtitle: Text(currency(m.priceCents)),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.add_circle_outline),
-                            onPressed: () =>
-                                ref.read(cartStoreProvider.notifier).add(m),
-                          ),
+                      for (final c in menu.categories)
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 8,
+                              ),
+                              child: Text(
+                                c.name,
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                            ),
+                            for (final m
+                                in (menu.itemsByCategory[c.id] ??
+                                    const <MenuItemModel>[]))
+                              ListTile(
+                                onTap: () => context.push('/item/${m.id}'),
+                                title: Text(m.name),
+                                subtitle: Text(currency(m.priceCents)),
+                                trailing: IconButton(
+                                  icon: const Icon(Icons.add_circle_outline),
+                                  onPressed: () => ref
+                                      .read(cartStoreProvider.notifier)
+                                      .add(m),
+                                ),
+                              ),
+                          ],
                         ),
                     ],
                   ),
-              ],
-            ),
           ),
         ],
       ),
@@ -284,18 +366,43 @@ class _StoreScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Future<void> callCafe() async {
+      final uri = Uri(scheme: 'tel', path: '+905550000000');
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri);
+      }
+    }
+
+    Future<void> openMap() async {
+      final uri = Uri.parse('https://maps.google.com/?q=123+Coffee+St');
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    }
+
     return Scaffold(
       appBar: AppBar(title: const Text('Store')),
-      body: const Padding(
-        padding: EdgeInsets.all(16),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Address: 123 Coffee St'),
-            SizedBox(height: 8),
-            Text('Hours: 8:00 - 20:00'),
-            SizedBox(height: 8),
-            Text('Phone: +90 555 000 00 00'),
+            const Text('Address: 123 Coffee St'),
+            const SizedBox(height: 8),
+            const Text('Hours: 8:00 - 20:00'),
+            const SizedBox(height: 8),
+            const Text('Phone: +90 555 000 00 00'),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                ElevatedButton(onPressed: callCafe, child: const Text('Call')),
+                const SizedBox(width: 12),
+                ElevatedButton(
+                  onPressed: openMap,
+                  child: const Text('Open Map'),
+                ),
+              ],
+            ),
           ],
         ),
       ),
@@ -303,12 +410,239 @@ class _StoreScreen extends StatelessWidget {
   }
 }
 
-class _MoreScreen extends StatelessWidget {
+class _MoreScreen extends ConsumerWidget {
   const _MoreScreen();
 
   @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final session = ref.watch(authStoreProvider);
+    return Scaffold(
+      appBar: AppBar(title: const Text('More')),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (session == null)
+              ElevatedButton(
+                onPressed: () => context.go('/signin'),
+                child: const Text('Sign In'),
+              )
+            else ...[
+              ElevatedButton(
+                onPressed: () => context.go('/profile'),
+                child: const Text('Profile'),
+              ),
+              if (session.isAdmin) ...[
+                const SizedBox(height: 8),
+                ElevatedButton(
+                  onPressed: () => _showAdminPanel(context, ref),
+                  child: const Text('Admin Panel'),
+                ),
+              ],
+              const SizedBox(height: 8),
+              ElevatedButton(
+                onPressed: () => ref.read(authStoreProvider.notifier).signOut(),
+                child: const Text('Sign Out'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+void _showAdminPanel(BuildContext context, WidgetRef ref) {
+  showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (context) {
+      final orders = ref.watch(ordersStoreProvider).orders;
+      final pointsIssued = ref
+          .watch(loyaltyStoreProvider)
+          .transactions
+          .where((t) => t.delta > 0)
+          .fold<int>(0, (s, t) => s + t.delta);
+      final pointsRedeemed = ref
+          .watch(loyaltyStoreProvider)
+          .transactions
+          .where((t) => t.delta < 0)
+          .fold<int>(0, (s, t) => s + t.delta.abs());
+      return SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text(
+              'Admin Dashboard',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 8),
+            Text('Orders today: ${orders.length}'),
+            Text('Points issued today: $pointsIssued'),
+            Text('Points redeemed today: $pointsRedeemed'),
+            const Divider(height: 24),
+            const Text('Scan & Earn (enter user id then amount)'),
+            const SizedBox(height: 8),
+            _ScanEarnForm(),
+            const Divider(height: 24),
+            Text('Campaigns', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            _CampaignsForm(),
+            const Divider(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Orders Management'),
+                TextButton(
+                  onPressed: () => showModalBottomSheet<void>(
+                    context: context,
+                    showDragHandle: true,
+                    builder: (_) => const AdminMenuSheet(),
+                  ),
+                  child: const Text('Menu CRUD'),
+                ),
+              ],
+            ),
+            for (final o in orders)
+              ListTile(
+                title: Text('#${o.id}'),
+                subtitle: Text(o.status.name),
+                trailing: Wrap(
+                  spacing: 8,
+                  children: [
+                    ElevatedButton(
+                      onPressed: o.status == OrderStatus.ready
+                          ? null
+                          : () => ref
+                                .read(ordersStoreProvider.notifier)
+                                .updateStatus(o.id, OrderStatus.ready),
+                      child: const Text('Ready'),
+                    ),
+                    ElevatedButton(
+                      onPressed: o.status == OrderStatus.completed
+                          ? null
+                          : () => ref
+                                .read(ordersStoreProvider.notifier)
+                                .updateStatus(o.id, OrderStatus.completed),
+                      child: const Text('Complete'),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+class _ScanEarnForm extends ConsumerStatefulWidget {
+  const _ScanEarnForm();
+  @override
+  ConsumerState<_ScanEarnForm> createState() => _ScanEarnFormState();
+}
+
+class _ScanEarnFormState extends ConsumerState<_ScanEarnForm> {
+  final idCtrl = TextEditingController();
+  final ptsCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    idCtrl.dispose();
+    ptsCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return const _OrdersHistoryScreen();
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: idCtrl,
+            decoration: const InputDecoration(labelText: 'User ID'),
+          ),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 100,
+          child: TextField(
+            controller: ptsCtrl,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(labelText: 'Points'),
+          ),
+        ),
+        const SizedBox(width: 8),
+        ElevatedButton(
+          onPressed: () {
+            final pts = int.tryParse(ptsCtrl.text) ?? 0;
+            if (pts > 0) {
+              ref
+                  .read(loyaltyStoreProvider.notifier)
+                  .earn(pts, reason: 'Admin manual earn');
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('Points added')));
+            }
+          },
+          child: const Text('Add'),
+        ),
+      ],
+    );
+  }
+}
+
+class _CampaignsForm extends ConsumerStatefulWidget {
+  @override
+  ConsumerState<_CampaignsForm> createState() => _CampaignsFormState();
+}
+
+class _CampaignsFormState extends ConsumerState<_CampaignsForm> {
+  final titleCtrl = TextEditingController();
+  final bodyCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    titleCtrl.dispose();
+    bodyCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final campaigns = ref.watch(campaignsStoreProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final c in campaigns)
+          ListTile(title: Text(c.title), subtitle: Text(c.body)),
+        const SizedBox(height: 8),
+        TextField(
+          controller: titleCtrl,
+          decoration: const InputDecoration(labelText: 'Title'),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: bodyCtrl,
+          decoration: const InputDecoration(labelText: 'Body'),
+        ),
+        const SizedBox(height: 8),
+        ElevatedButton(
+          onPressed: () {
+            if (titleCtrl.text.isEmpty || bodyCtrl.text.isEmpty) return;
+            ref
+                .read(campaignsStoreProvider.notifier)
+                .add(titleCtrl.text.trim(), bodyCtrl.text.trim());
+            titleCtrl.clear();
+            bodyCtrl.clear();
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('Campaign added')));
+          },
+          child: const Text('Add campaign'),
+        ),
+      ],
+    );
   }
 }
 
@@ -336,7 +670,7 @@ class _OrdersHistoryScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: const Text('Orders')),
       body: orders.isEmpty
-          ? const Center(child: Text('No orders yet'))
+          ? const EmptyState(message: 'No orders yet', icon: Icons.receipt_long)
           : ListView.builder(
               itemCount: orders.length,
               itemBuilder: (context, i) {
