@@ -21,6 +21,7 @@ final appThemeProvider = Provider<ThemeData>((ref) {
     colorScheme: scheme,
     useMaterial3: true,
     brightness: Brightness.light,
+    scaffoldBackgroundColor: scheme.background,
     textTheme: _textTheme(ThemeData.light().textTheme),
     appBarTheme: AppBarTheme(
       backgroundColor: scheme.surface,
@@ -48,6 +49,7 @@ final appDarkThemeProvider = Provider<ThemeData>((ref) {
     colorScheme: scheme,
     useMaterial3: true,
     brightness: Brightness.dark,
+    scaffoldBackgroundColor: scheme.background,
     textTheme: _textTheme(ThemeData.dark().textTheme),
     appBarTheme: AppBarTheme(
       backgroundColor: scheme.surface,
