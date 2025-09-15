@@ -8,14 +8,15 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:cafe_app/app.dart';
+import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 void main() {
-  testWidgets('App boots and shows placeholder', (WidgetTester tester) async {
+  testWidgets('App boots and shows Home screen', (WidgetTester tester) async {
     // Build our app and trigger a frame.
     await tester.pumpWidget(const ProviderScope(child: CafeApp()));
 
-    // App renders placeholder text on home screen.
-    expect(find.text('Hello, Cafe!'), findsOneWidget);
+    // App renders Home screen title (AppBar).
+    expect(find.widgetWithText(AppBar, 'Home'), findsOneWidget);
   });
 }

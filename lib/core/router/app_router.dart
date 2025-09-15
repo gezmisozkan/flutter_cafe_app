@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../widgets/qr_box.dart';
+import '../../features/loyalty/data/loyalty_store.dart';
+import '../../features/menu/data/menu_store.dart';
+import '../../features/cart/data/cart_store.dart';
+import '../../features/orders/data/orders_store.dart';
+import '../../features/menu/domain/models.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
@@ -104,16 +109,174 @@ class _HomeScreen extends StatelessWidget {
   }
 }
 
-class _OrderScreen extends StatelessWidget {
+class _OrderScreen extends ConsumerWidget {
   const _OrderScreen();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final menu = ref.watch(menuStoreProvider);
+    final cart = ref.watch(cartStoreProvider);
+    final currency = (int cents) => '₺ ${(cents / 100).toStringAsFixed(2)}';
     return Scaffold(
       appBar: AppBar(title: const Text('Order')),
-      body: const Center(child: Text('Menu coming soon')),
+      body: Column(
+        children: [
+          SizedBox(
+            height: 56,
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              scrollDirection: Axis.horizontal,
+              itemCount: menu.categories.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (context, i) {
+                final c = menu.categories[i];
+                return Chip(label: Text(c.name));
+              },
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              children: [
+                for (final c in menu.categories)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        child: Text(
+                          c.name,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+                      for (final m
+                          in (menu.itemsByCategory[c.id] ??
+                              const <MenuItemModel>[]))
+                        ListTile(
+                          title: Text(m.name),
+                          subtitle: Text(currency(m.priceCents)),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.add_circle_outline),
+                            onPressed: () =>
+                                ref.read(cartStoreProvider.notifier).add(m),
+                          ),
+                        ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      bottomNavigationBar: SafeArea(
+        top: false,
+        child: ListTile(
+          title: const Text('Cart total'),
+          subtitle: Text(currency(cart.totalCents)),
+          trailing: ElevatedButton(
+            onPressed: cart.items.isEmpty
+                ? null
+                : () => _showCartSheet(context, ref),
+            child: const Text('View Cart'),
+          ),
+        ),
+      ),
     );
   }
+}
+
+Future<void> _showCartSheet(BuildContext context, WidgetRef ref) async {
+  final currency = (int cents) => '₺ ${(cents / 100).toStringAsFixed(2)}';
+  await showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (context) {
+      final cart = ref.watch(cartStoreProvider);
+      int pickup = 0; // 0 ASAP, 10 in 10m
+      return StatefulBuilder(
+        builder: (context, setState) {
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Your Cart',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  Flexible(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: cart.items.length,
+                      itemBuilder: (context, i) {
+                        final ci = cart.items[i];
+                        return ListTile(
+                          title: Text('${ci.item.name} x${ci.qty}'),
+                          subtitle: ci.note == null ? null : Text(ci.note!),
+                          trailing: Text(currency(ci.lineTotalCents)),
+                          leading: IconButton(
+                            icon: const Icon(Icons.remove_circle_outline),
+                            onPressed: () => ref
+                                .read(cartStoreProvider.notifier)
+                                .removeAt(i),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text('Pickup time'),
+                  const SizedBox(height: 8),
+                  SegmentedButton<int>(
+                    segments: const [
+                      ButtonSegment<int>(value: 0, label: Text('ASAP')),
+                      ButtonSegment<int>(value: 10, label: Text('+10 min')),
+                    ],
+                    selected: {pickup},
+                    onSelectionChanged: (s) => setState(() => pickup = s.first),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Total: ${currency(cart.totalCents)}',
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      ElevatedButton(
+                        onPressed: cart.items.isEmpty
+                            ? null
+                            : () {
+                                ref
+                                    .read(ordersStoreProvider.notifier)
+                                    .placeOrder(
+                                      ref.read(cartStoreProvider),
+                                      pickupMinutesFromNow: pickup,
+                                    );
+                                ref.read(cartStoreProvider.notifier).clear();
+                                Navigator.of(context).pop();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Order placed')),
+                                );
+                              },
+                        child: const Text('Place order'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      );
+    },
+  );
 }
 
 class _StoreScreen extends StatelessWidget {
@@ -145,9 +308,58 @@ class _MoreScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return const _OrdersHistoryScreen();
+  }
+}
+
+class _OrdersHistoryScreen extends ConsumerWidget {
+  const _OrdersHistoryScreen();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final orders = ref.watch(ordersStoreProvider).orders.reversed.toList();
+    String statusLabel(OrderStatus s) {
+      switch (s) {
+        case OrderStatus.pending:
+          return 'Pending';
+        case OrderStatus.ready:
+          return 'Ready';
+        case OrderStatus.completed:
+          return 'Completed';
+        case OrderStatus.canceled:
+          return 'Canceled';
+      }
+    }
+
+    String currency(int cents) => '₺ ${(cents / 100).toStringAsFixed(2)}';
+
     return Scaffold(
-      appBar: AppBar(title: const Text('More')),
-      body: const Center(child: Text('Settings & Admin soon')),
+      appBar: AppBar(title: const Text('Orders')),
+      body: orders.isEmpty
+          ? const Center(child: Text('No orders yet'))
+          : ListView.builder(
+              itemCount: orders.length,
+              itemBuilder: (context, i) {
+                final o = orders[i];
+                return ExpansionTile(
+                  title: Text('#${o.id} • ${statusLabel(o.status)}'),
+                  subtitle: Text(
+                    '${o.createdAt} • Total ${currency(o.totalCents)}',
+                  ),
+                  children: [
+                    for (final it in o.items)
+                      ListTile(
+                        dense: true,
+                        title: Text('${it.name} x${it.qty}'),
+                        subtitle: it.note == null ? null : Text(it.note!),
+                        trailing: Text(
+                          currency(it.priceCentsSnapshot * it.qty),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
     );
   }
 }
@@ -158,7 +370,7 @@ class _MyCardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final userId = ref.watch(fakeUserIdProvider);
-    final points = ref.watch(loyaltyPointsProvider);
+    final loyalty = ref.watch(loyaltyStoreProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('My Card')),
       body: Padding(
@@ -167,7 +379,7 @@ class _MyCardScreen extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Text(
-              'Points: $points',
+              'Points: ${loyalty.points}',
               style: Theme.of(context).textTheme.headlineMedium,
             ),
             const SizedBox(height: 16),
@@ -179,16 +391,43 @@ class _MyCardScreen extends ConsumerWidget {
               children: [
                 ElevatedButton(
                   onPressed: () =>
-                      ref.read(loyaltyPointsProvider.notifier).earn(10),
+                      ref.read(loyaltyStoreProvider.notifier).earn(10),
                   child: const Text('Earn +10'),
                 ),
                 const SizedBox(width: 12),
                 ElevatedButton(
-                  onPressed: () =>
-                      ref.read(loyaltyPointsProvider.notifier).redeem(10),
-                  child: const Text('Redeem -10'),
+                  onPressed: () => _showRedeem(context, ref),
+                  child: const Text('Redeem'),
                 ),
               ],
+            ),
+            const SizedBox(height: 24),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'History',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView.builder(
+                itemCount: loyalty.transactions.length,
+                itemBuilder: (context, i) {
+                  final tx =
+                      loyalty.transactions[loyalty.transactions.length - 1 - i];
+                  final isEarn = tx.delta > 0;
+                  return ListTile(
+                    leading: Icon(
+                      isEarn ? Icons.add : Icons.remove,
+                      color: isEarn ? Colors.green : Colors.red,
+                    ),
+                    title: Text(tx.reason),
+                    trailing: Text('${tx.delta > 0 ? '+' : ''}${tx.delta}'),
+                    subtitle: Text('${tx.createdAt}'),
+                  );
+                },
+              ),
             ),
           ],
         ),
@@ -199,15 +438,41 @@ class _MyCardScreen extends ConsumerWidget {
 
 final fakeUserIdProvider = Provider<String>((ref) => 'user-1234');
 
-class LoyaltyPointsNotifier extends StateNotifier<int> {
-  LoyaltyPointsNotifier() : super(0);
-
-  void earn(int delta) => state += delta;
-  void redeem(int delta) => state = (state - delta).clamp(0, 1 << 31);
+Future<void> _showRedeem(BuildContext context, WidgetRef ref) async {
+  final store = ref.read(loyaltyStoreProvider);
+  await showModalBottomSheet(
+    context: context,
+    showDragHandle: true,
+    builder: (context) {
+      return SafeArea(
+        child: ListView(
+          children: [
+            for (final r in store.rewards)
+              ListTile(
+                title: Text(r.title),
+                subtitle: Text('${r.costPoints} pts'),
+                trailing: ElevatedButton(
+                  onPressed: store.points >= r.costPoints
+                      ? () {
+                          final ok = ref
+                              .read(loyaltyStoreProvider.notifier)
+                              .redeem(r);
+                          Navigator.of(context).pop();
+                          if (!ok) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Not enough points'),
+                              ),
+                            );
+                          }
+                        }
+                      : null,
+                  child: const Text('Redeem'),
+                ),
+              ),
+          ],
+        ),
+      );
+    },
+  );
 }
-
-final loyaltyPointsProvider = StateNotifierProvider<LoyaltyPointsNotifier, int>(
-  (ref) {
-    return LoyaltyPointsNotifier();
-  },
-);
