@@ -1,16 +1,16 @@
 # cafe_app
 
-A new Flutter project.
+Cafe Loyalty + Ordering demo with Riverpod and GoRouter. In-memory first, Supabase-ready.
 
 ## Development
 
-Run with Supabase keys (optional at this stage):
+Run with Supabase (recommended):
 
 ```bash
-flutter run --dart-define=SUPABASE_URL=your_url --dart-define=SUPABASE_ANON_KEY=your_key
+flutter run -d chrome --dart-define=SUPABASE_URL=your_url --dart-define=SUPABASE_ANON_KEY=your_key
 ```
 
-CI runs analyze, tests, and a debug build via GitHub Actions.
+See `supabase/README.md` for DB setup and migrations.
 
 ## App overview
 

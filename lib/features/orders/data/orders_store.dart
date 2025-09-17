@@ -1,5 +1,6 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../cart/data/cart_store.dart';
+import '../../../common/services/supabase.dart';
 
 enum OrderStatus { pending, ready, completed, canceled }
 
@@ -44,9 +45,13 @@ class OrdersState {
 }
 
 class OrdersStore extends StateNotifier<OrdersState> {
-  OrdersStore() : super(const OrdersState(orders: []));
+  OrdersStore(this._ref) : super(const OrdersState(orders: []));
+  final Ref _ref;
 
-  void placeOrder(CartState cart, {required int pickupMinutesFromNow}) {
+  Future<void> placeOrder(
+    CartState cart, {
+    required int pickupMinutesFromNow,
+  }) async {
     if (cart.items.isEmpty) return;
     final items = [
       for (final ci in cart.items)
@@ -67,6 +72,29 @@ class OrdersStore extends StateNotifier<OrdersState> {
       items: items,
     );
     state = OrdersState(orders: [...state.orders, order]);
+    final client = _ref.read(supabaseClientProvider);
+    if (client != null) {
+      final inserted = await client
+          .from('orders')
+          .insert({
+            'status': 'pending',
+            'pickup_minutes_from_now': pickupMinutesFromNow,
+            'total_cents': cart.totalCents,
+          })
+          .select('id, created_at')
+          .single();
+      final orderId = inserted['id'] as String;
+      for (final it in items) {
+        await client.from('order_items').insert({
+          'order_id': orderId,
+          'menu_item_id': it.menuItemId,
+          'name': it.name,
+          'qty': it.qty,
+          'price_cents_snapshot': it.priceCentsSnapshot,
+          'note': it.note,
+        });
+      }
+    }
   }
 
   void updateStatus(String orderId, OrderStatus status) {
@@ -91,5 +119,5 @@ class OrdersStore extends StateNotifier<OrdersState> {
 final ordersStoreProvider = StateNotifierProvider<OrdersStore, OrdersState>((
   ref,
 ) {
-  return OrdersStore();
+  return OrdersStore(ref);
 });

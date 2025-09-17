@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../domain/models.dart';
+import '../../../common/services/supabase.dart';
 
 class MenuState {
   const MenuState({required this.categories, required this.itemsByCategory});
@@ -11,12 +12,14 @@ class MenuState {
 }
 
 class MenuStore extends StateNotifier<MenuState> {
-  MenuStore() : super(_seed()) {
+  MenuStore(this._ref) : super(_seed()) {
     // Load cached menu on startup; if none, persist the seed
     Future.microtask(() async {
       await _loadFromCacheOrPersistSeed();
+      await _maybeLoadFromSupabase();
     });
   }
+  final Ref _ref;
 
   static const _prefsKey = 'menu_cache_v1';
 
@@ -96,7 +99,11 @@ class MenuStore extends StateNotifier<MenuState> {
   }
 
   Future<void> refreshMenu() async {
-    // Simulate a remote refresh: reset to seed and persist
+    final client = _ref.read(supabaseClientProvider);
+    if (client != null) {
+      await _maybeLoadFromSupabase();
+      return;
+    }
     state = _seed();
     await _persist(state);
   }
@@ -162,8 +169,50 @@ class MenuStore extends StateNotifier<MenuState> {
     }
     return MenuState(categories: categories, itemsByCategory: itemsByCategory);
   }
+
+  Future<void> _maybeLoadFromSupabase() async {
+    final client = _ref.read(supabaseClientProvider);
+    if (client == null) return;
+    try {
+      final cats = await client
+          .from('menu_categories')
+          .select('id, name, sort_order')
+          .order('sort_order');
+      final items = await client
+          .from('menu_items')
+          .select('id, category_id, name, price_cents, image_url, is_active')
+          .eq('is_active', true);
+      final categories = [
+        for (final c in (cats as List))
+          MenuCategory(
+            id: c['id'] as String,
+            name: c['name'] as String,
+            sortOrder: (c['sort_order'] as num?)?.toInt() ?? 0,
+          ),
+      ];
+      final itemsByCategory = <String, List<MenuItemModel>>{};
+      for (final m in (items as List)) {
+        final item = MenuItemModel(
+          id: m['id'] as String,
+          categoryId: m['category_id'] as String,
+          name: m['name'] as String,
+          priceCents: (m['price_cents'] as num).toInt(),
+          imageUrl: m['image_url'] as String?,
+          isActive: (m['is_active'] as bool?) ?? true,
+        );
+        (itemsByCategory[item.categoryId] ??= []).add(item);
+      }
+      state = MenuState(
+        categories: categories,
+        itemsByCategory: itemsByCategory,
+      );
+      await _persist(state);
+    } catch (_) {
+      // ignore and keep cache/seed
+    }
+  }
 }
 
 final menuStoreProvider = StateNotifierProvider<MenuStore, MenuState>((ref) {
-  return MenuStore();
+  return MenuStore(ref);
 });

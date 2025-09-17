@@ -1,5 +1,7 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../../common/models/repositories.dart';
+import '../../../common/services/supabase.dart';
+import '../../../core/env/env.dart';
 
 class Campaign {
   Campaign({required this.title, required this.body});
@@ -27,6 +29,11 @@ class CampaignsStore extends StateNotifier<List<Campaign>> {
 }
 
 final campaignsRepositoryProvider = Provider<CampaignsRepository>((ref) {
+  final env = ref.watch(appEnvProvider);
+  final client = ref.watch(supabaseClientProvider);
+  if (env.isConfigured && client != null) {
+    return SupabaseCampaignsRepository(client);
+  }
   return InMemoryCampaignsRepository();
 });
 

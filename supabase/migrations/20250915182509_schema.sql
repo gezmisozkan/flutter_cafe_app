@@ -1,4 +1,4 @@
--- Basic schema for cafe loyalty + ordering (mock-ready)
+-- Initial schema
 
 create table if not exists profiles (
   id uuid primary key default gen_random_uuid(),
@@ -59,14 +59,6 @@ create table if not exists order_items (
   primary key (order_id, menu_item_id, name)
 );
 
--- Simple seeds
-insert into menu_categories (id, name, sort_order) values
-  (gen_random_uuid(), 'Coffee', 1),
-  (gen_random_uuid(), 'Tea', 2),
-  (gen_random_uuid(), 'Snacks', 3)
-on conflict do nothing;
-
--- Marketing campaigns (for Home page)
 create table if not exists campaigns (
   id uuid primary key default gen_random_uuid(),
   title text not null,
@@ -74,9 +66,17 @@ create table if not exists campaigns (
   created_at timestamp with time zone default now()
 );
 
--- RLS example (enable as needed)
+-- seeds
+insert into menu_categories (id, name, sort_order) values
+  (gen_random_uuid(), 'Coffee', 1),
+  (gen_random_uuid(), 'Tea', 2),
+  (gen_random_uuid(), 'Snacks', 3)
+on conflict do nothing;
+
+-- Suggested RLS policies (enable as needed)
 -- alter table profiles enable row level security;
 -- create policy "users can view own profile" on profiles for select using (auth.uid() = id);
 -- alter table campaigns enable row level security;
 -- create policy "public read campaigns" on campaigns for select using (true);
+
 

@@ -19,6 +19,7 @@ class CafeApp extends ConsumerWidget {
       routerConfig: router,
       theme: theme,
       darkTheme: darkTheme,
+      themeMode: ThemeMode.light,
       localizationsDelegates: const [
         GlobalMaterialLocalizations.delegate,
         GlobalWidgetsLocalizations.delegate,

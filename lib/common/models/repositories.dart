@@ -20,3 +20,24 @@ class InMemoryCampaignsRepository implements CampaignsRepository {
     return List.of(_items);
   }
 }
+
+class SupabaseCampaignsRepository implements CampaignsRepository {
+  SupabaseCampaignsRepository(this._client);
+
+  final dynamic _client; // late-bound to avoid importing supabase here
+
+  @override
+  Future<void> add(String title, String body) async {
+    await _client.from('campaigns').insert({'title': title, 'body': body});
+  }
+
+  @override
+  Future<List<(String title, String body)>> fetchAll() async {
+    final rows = await _client
+        .from('campaigns')
+        .select('title, body')
+        .order('created_at');
+    final list = (rows as List).cast<Map<String, dynamic>>();
+    return [for (final r in list) (r['title'] as String, r['body'] as String)];
+  }
+}

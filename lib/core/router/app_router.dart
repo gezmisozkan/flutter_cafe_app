@@ -64,6 +64,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             pageBuilder: (context, state) =>
                 const NoTransitionPage(child: _MoreScreen()),
           ),
+          GoRoute(
+            path: '/orders',
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: _OrdersHistoryScreen()),
+          ),
         ],
       ),
     ],
@@ -565,6 +570,11 @@ class _MoreScreen extends ConsumerWidget {
                 onPressed: () => context.go('/profile'),
                 child: const Text('Profile'),
               ),
+              const SizedBox(height: 8),
+              ElevatedButton(
+                onPressed: () => context.go('/orders'),
+                child: const Text('My Orders'),
+              ),
               if (session.isAdmin) ...[
                 const SizedBox(height: 8),
                 ElevatedButton(
@@ -865,6 +875,34 @@ class _CampaignsFormState extends ConsumerState<_CampaignsForm> {
 }
 
 // _OrdersHistoryScreen was unused; removed for now.
+class _OrdersHistoryScreen extends ConsumerWidget {
+  const _OrdersHistoryScreen();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final orders = ref.watch(ordersStoreProvider).orders;
+    return Scaffold(
+      appBar: AppBar(title: const Text('My Orders')),
+      body: orders.isEmpty
+          ? const EmptyState(message: 'No orders yet', icon: Icons.receipt_long)
+          : ListView.builder(
+              itemCount: orders.length,
+              itemBuilder: (context, i) {
+                final o = orders[orders.length - 1 - i];
+                return ListTile(
+                  title: Text(
+                    '#${o.id.substring(o.id.length - 6)} • ${o.status.name}',
+                  ),
+                  subtitle: Text('${o.createdAt} • ${o.items.length} items'),
+                  trailing: Text(
+                    '₺ ${(o.totalCents / 100).toStringAsFixed(2)}',
+                  ),
+                );
+              },
+            ),
+    );
+  }
+}
 
 class _MyCardScreen extends ConsumerWidget {
   const _MyCardScreen();
@@ -955,17 +993,19 @@ Future<void> _showRedeem(BuildContext context, WidgetRef ref) async {
                 subtitle: Text('${r.costPoints} pts'),
                 trailing: ElevatedButton(
                   onPressed: store.points >= r.costPoints
-                      ? () {
-                          final ok = ref
+                      ? () async {
+                          final ok = await ref
                               .read(loyaltyStoreProvider.notifier)
                               .redeem(r);
-                          Navigator.of(context).pop();
-                          if (!ok) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Not enough points'),
-                              ),
-                            );
+                          if (context.mounted) {
+                            Navigator.of(context).pop();
+                            if (!ok) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Not enough points'),
+                                ),
+                              );
+                            }
                           }
                         }
                       : () {

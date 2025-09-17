@@ -1,5 +1,7 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../domain/models.dart';
+import '../../../common/services/supabase.dart';
+import '../../auth/data/auth_store.dart';
 
 class LoyaltyState {
   const LoyaltyState({
@@ -26,7 +28,7 @@ class LoyaltyState {
 }
 
 class LoyaltyStore extends StateNotifier<LoyaltyState> {
-  LoyaltyStore()
+  LoyaltyStore(this._ref)
     : super(
         LoyaltyState(
           points: 0,
@@ -34,6 +36,7 @@ class LoyaltyStore extends StateNotifier<LoyaltyState> {
           rewards: _defaultRewards,
         ),
       );
+  final Ref _ref;
 
   static final List<RewardItem> _defaultRewards = [
     RewardItem(id: 'r1', title: 'Free Espresso', costPoints: 50),
@@ -41,7 +44,7 @@ class LoyaltyStore extends StateNotifier<LoyaltyState> {
     RewardItem(id: 'r3', title: 'Croissant', costPoints: 80),
   ];
 
-  void earn(int delta, {String reason = 'Earned at counter'}) {
+  Future<void> earn(int delta, {String reason = 'Earned at counter'}) async {
     final tx = LoyaltyTransaction(
       delta: delta,
       reason: reason,
@@ -51,9 +54,22 @@ class LoyaltyStore extends StateNotifier<LoyaltyState> {
       points: state.points + delta,
       transactions: [...state.transactions, tx],
     );
+    final client = _ref.read(supabaseClientProvider);
+    final session = _ref.read(authStoreProvider);
+    if (client != null && session != null) {
+      await client.from('loyalty_transactions').insert({
+        'user_id': session.userId,
+        'delta': delta,
+        'reason': reason,
+      });
+      await client.from('loyalty_wallets').upsert({
+        'user_id': session.userId,
+        'points': state.points,
+      });
+    }
   }
 
-  bool redeem(RewardItem reward) {
+  Future<bool> redeem(RewardItem reward) async {
     if (state.points < reward.costPoints) return false;
     final tx = LoyaltyTransaction(
       delta: -reward.costPoints,
@@ -64,6 +80,19 @@ class LoyaltyStore extends StateNotifier<LoyaltyState> {
       points: state.points - reward.costPoints,
       transactions: [...state.transactions, tx],
     );
+    final client = _ref.read(supabaseClientProvider);
+    final session = _ref.read(authStoreProvider);
+    if (client != null && session != null) {
+      await client.from('loyalty_transactions').insert({
+        'user_id': session.userId,
+        'delta': -reward.costPoints,
+        'reason': 'Redeem: ${reward.title}',
+      });
+      await client.from('loyalty_wallets').upsert({
+        'user_id': session.userId,
+        'points': state.points,
+      });
+    }
     return true;
   }
 }
@@ -71,5 +100,5 @@ class LoyaltyStore extends StateNotifier<LoyaltyState> {
 final loyaltyStoreProvider = StateNotifierProvider<LoyaltyStore, LoyaltyState>((
   ref,
 ) {
-  return LoyaltyStore();
+  return LoyaltyStore(ref);
 });
