@@ -1,6 +1,9 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../../common/services/supabase.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import '../../../common/services/fcm_token_sync.dart';
 
 class UserSession {
   UserSession({
@@ -33,6 +36,7 @@ class AuthStore extends StateNotifier<UserSession?> {
         final String uid = user.id;
         final String mail = user.email ?? email;
         state = UserSession(userId: uid, email: mail, isAdmin: false);
+        await _saveFcmToken(uid);
         return true;
       } catch (_) {
         return false;
@@ -45,6 +49,7 @@ class AuthStore extends StateNotifier<UserSession?> {
       email: email,
       isAdmin: isAdmin,
     );
+    await _saveFcmToken(state!.userId);
     return true;
   }
 
@@ -61,20 +66,46 @@ class AuthStore extends StateNotifier<UserSession?> {
         final String uid = user.id;
         final String mail = user.email ?? email;
         state = UserSession(userId: uid, email: mail, isAdmin: false);
+        await _saveFcmToken(uid);
         return true;
       } catch (_) {
         return false;
       }
     }
-    return signIn(email: email, password: password);
+    final ok = await signIn(email: email, password: password);
+    return ok;
   }
 
   void signOut() {
     final client = _ref.read(supabaseClientProvider);
+    final uid = state?.userId;
     if (client != null) {
       client.auth.signOut();
     }
+    if (uid != null) {
+      _removeFcmToken(uid);
+    }
     state = null;
+  }
+
+  Future<void> _saveFcmToken(String uid) async {
+    try {
+      final service = FcmTokenSyncService(
+        FirebaseFirestore.instance,
+        FirebaseMessaging.instance,
+      );
+      await service.saveCurrentToken(uid);
+    } catch (_) {}
+  }
+
+  Future<void> _removeFcmToken(String uid) async {
+    try {
+      final service = FcmTokenSyncService(
+        FirebaseFirestore.instance,
+        FirebaseMessaging.instance,
+      );
+      await service.removeCurrentToken(uid);
+    } catch (_) {}
   }
 }
 

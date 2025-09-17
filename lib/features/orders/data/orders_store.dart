@@ -1,6 +1,7 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../cart/data/cart_store.dart';
 import '../../../common/services/supabase.dart';
+import '../../menu/domain/models.dart';
 
 enum OrderStatus { pending, ready, completed, canceled }
 
@@ -47,6 +48,27 @@ class OrdersState {
 class OrdersStore extends StateNotifier<OrdersState> {
   OrdersStore(this._ref) : super(const OrdersState(orders: []));
   final Ref _ref;
+
+  List<UserOrder> lastOrders({int limit = 3}) {
+    final sorted = [...state.orders]
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return sorted.take(limit).toList(growable: false);
+  }
+
+  Future<void> reorder(UserOrder order) async {
+    final cart = _ref.read(cartStoreProvider.notifier);
+    for (final it in order.items) {
+      cart.add(
+        MenuItemModel(
+          id: it.menuItemId,
+          categoryId: '',
+          name: it.name,
+          priceCents: it.priceCentsSnapshot,
+        ),
+        note: it.note,
+      );
+    }
+  }
 
   Future<void> placeOrder(
     CartState cart, {

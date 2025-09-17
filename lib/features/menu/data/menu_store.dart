@@ -3,6 +3,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../domain/models.dart';
 import '../../../common/services/supabase.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class MenuState {
   const MenuState({required this.categories, required this.itemsByCategory});
@@ -16,6 +17,7 @@ class MenuStore extends StateNotifier<MenuState> {
     // Load cached menu on startup; if none, persist the seed
     Future.microtask(() async {
       await _loadFromCacheOrPersistSeed();
+      await _maybeLoadFromFirestore();
       await _maybeLoadFromSupabase();
     });
   }
@@ -99,6 +101,13 @@ class MenuStore extends StateNotifier<MenuState> {
   }
 
   Future<void> refreshMenu() async {
+    // Prefer Firestore if available
+    final fs = FirebaseFirestore.instance;
+    try {
+      await _loadFromFirestore(fs);
+      return;
+    } catch (_) {}
+
     final client = _ref.read(supabaseClientProvider);
     if (client != null) {
       await _maybeLoadFromSupabase();
@@ -168,6 +177,56 @@ class MenuStore extends StateNotifier<MenuState> {
       itemsByCategory[entry.key as String] = list;
     }
     return MenuState(categories: categories, itemsByCategory: itemsByCategory);
+  }
+
+  Future<void> _maybeLoadFromFirestore() async {
+    try {
+      await _loadFromFirestore(FirebaseFirestore.instance);
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  Future<void> _loadFromFirestore(FirebaseFirestore fs) async {
+    // For MVP, read public categories/products, active only, order by sort
+    final catsSnap = await fs
+        .collection('categories')
+        .orderBy('sort')
+        .where('active', isEqualTo: true)
+        .get(const GetOptions(source: Source.serverAndCache));
+    final categories = <MenuCategory>[];
+    for (final d in catsSnap.docs) {
+      final data = d.data();
+      categories.add(
+        MenuCategory(
+          id: d.id,
+          name: (data['name'] as String?) ?? 'Category',
+          sortOrder: (data['sort'] as num?)?.toInt() ?? 0,
+        ),
+      );
+    }
+    final itemsByCategory = <String, List<MenuItemModel>>{};
+    // Read all active products; filter by active and category
+    final prodSnap = await fs
+        .collection('products')
+        .where('active', isEqualTo: true)
+        .get(const GetOptions(source: Source.serverAndCache));
+    for (final d in prodSnap.docs) {
+      final data = d.data();
+      final categoryId = (data['categoryId'] as String?) ?? '';
+      if (categoryId.isEmpty) continue;
+      final item = MenuItemModel(
+        id: d.id,
+        categoryId: categoryId,
+        name: (data['name'] as String?) ?? 'Item',
+        priceCents: (data['base_price'] as num?)?.toInt() ?? 0,
+        imageUrl: data['image_url'] as String?,
+        isActive: (data['active'] as bool?) ?? true,
+      );
+      (itemsByCategory[categoryId] ??= []).add(item);
+    }
+    state = MenuState(categories: categories, itemsByCategory: itemsByCategory);
+    await _persist(state);
   }
 
   Future<void> _maybeLoadFromSupabase() async {

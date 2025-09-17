@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../widgets/qr_box.dart';
 import '../../features/loyalty/data/loyalty_store.dart';
 import '../../features/menu/data/menu_store.dart';
@@ -14,6 +13,7 @@ import '../../features/auth/data/auth_store.dart';
 import '../../features/menu/ui/admin_menu.dart';
 import '../../features/admin/data/campaigns_store.dart';
 import '../../widgets/empty_state.dart';
+import '../../common/services/functions_client.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
@@ -26,6 +26,39 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/profile',
         builder: (context, state) => const ProfileScreen(),
+      ),
+      // Store selector (modal)
+      GoRoute(
+        path: '/store/select',
+        pageBuilder: (context, state) =>
+            DialogPage(child: _StoreSelectScreen()),
+      ),
+      // Product detail (alias old /item/:id)
+      GoRoute(
+        path: '/product/:id',
+        builder: (context, state) {
+          final menu = ref.read(menuStoreProvider);
+          final id = state.pathParameters['id']!;
+          final item = findItemById(menu, id);
+          return ItemDetailScreen(item: item!);
+        },
+      ),
+      // Checkout
+      GoRoute(
+        path: '/checkout',
+        builder: (context, state) => const _CheckoutScreen(),
+      ),
+      // Order tracker
+      GoRoute(
+        path: '/order/:id/tracker',
+        builder: (context, state) =>
+            _OrderTrackerScreen(orderId: state.pathParameters['id']!),
+      ),
+      // Receipt
+      GoRoute(
+        path: '/receipt/:id',
+        builder: (context, state) =>
+            _ReceiptScreen(orderId: state.pathParameters['id']!),
       ),
       ShellRoute(
         builder: (context, state, child) => _TabShell(child: child),
@@ -41,6 +74,22 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 const NoTransitionPage(child: _OrderScreen()),
           ),
           GoRoute(
+            path: '/cart',
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: _CartScreen()),
+          ),
+          GoRoute(
+            path: '/loyalty',
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: _MyCardScreen()),
+          ),
+          GoRoute(
+            path: '/account',
+            pageBuilder: (context, state) =>
+                const NoTransitionPage(child: _MoreScreen()),
+          ),
+          // Back-compat existing paths
+          GoRoute(
             path: '/item/:id',
             builder: (context, state) {
               final menu = ref.read(menuStoreProvider);
@@ -48,21 +97,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               final item = findItemById(menu, id);
               return ItemDetailScreen(item: item!);
             },
-          ),
-          GoRoute(
-            path: '/card',
-            pageBuilder: (context, state) =>
-                const NoTransitionPage(child: _MyCardScreen()),
-          ),
-          GoRoute(
-            path: '/store',
-            pageBuilder: (context, state) =>
-                const NoTransitionPage(child: _StoreScreen()),
-          ),
-          GoRoute(
-            path: '/more',
-            pageBuilder: (context, state) =>
-                const NoTransitionPage(child: _MoreScreen()),
           ),
           GoRoute(
             path: '/orders',
@@ -83,9 +117,9 @@ class _TabShell extends StatelessWidget {
   static const _tabs = [
     ('/home', Icons.home, 'Home'),
     ('/order', Icons.shopping_bag_outlined, 'Order'),
-    ('/card', Icons.credit_card, 'My Card'),
-    ('/store', Icons.store_mall_directory_outlined, 'Store'),
-    ('/more', Icons.person, 'More'),
+    ('/cart', Icons.shopping_cart_outlined, 'Cart'),
+    ('/loyalty', Icons.card_membership_outlined, 'Loyalty'),
+    ('/account', Icons.person_outline, 'Account'),
   ];
 
   int _indexForLocation(BuildContext context) {
@@ -127,11 +161,15 @@ class _HomeScreen extends ConsumerWidget {
         title: const Text('Home'),
         actions: [
           IconButton(
+            tooltip: 'Select store',
+            icon: const Icon(Icons.store_mall_directory_outlined),
+            onPressed: () => context.push('/store/select'),
+          ),
+          IconButton(
             tooltip: 'Refresh campaigns',
             icon: const Icon(Icons.refresh),
             onPressed: () {
               try {
-                // For mock: if empty, add a default; otherwise show a message
                 if (ref.read(campaignsStoreProvider).isEmpty) {
                   ref
                       .read(campaignsStoreProvider.notifier)
@@ -229,8 +267,8 @@ class _HomeScreen extends ConsumerWidget {
                     const SizedBox(width: 12),
                     Expanded(
                       child: ElevatedButton(
-                        onPressed: () => context.go('/card'),
-                        child: const Text('My Card'),
+                        onPressed: () => context.go('/loyalty'),
+                        child: const Text('Loyalty'),
                       ),
                     ),
                   ],
@@ -239,10 +277,25 @@ class _HomeScreen extends ConsumerWidget {
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton(
-                    onPressed: () => context.go('/more'),
-                    child: const Text('More'),
+                    onPressed: () => context.go('/account'),
+                    child: const Text('Account'),
                   ),
                 ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Order again',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                _LastOrdersList(),
               ],
             ),
           ),
@@ -337,7 +390,7 @@ class _OrderScreen extends ConsumerWidget {
                                 in (menu.itemsByCategory[c.id] ??
                                     const <MenuItemModel>[]))
                               ListTile(
-                                onTap: () => context.push('/item/${m.id}'),
+                                onTap: () => context.push('/product/${m.id}'),
                                 title: Text(m.name),
                                 subtitle: Text(currency(m.priceCents)),
                                 trailing: IconButton(
@@ -395,9 +448,7 @@ class _OrderScreen extends ConsumerWidget {
           subtitle: Text(currency(cart.totalCents)),
           trailing: ElevatedButton(
             key: const ValueKey('btn-view-cart'),
-            onPressed: cart.items.isEmpty
-                ? null
-                : () => _showCartSheet(context, ref),
+            onPressed: cart.items.isEmpty ? null : () => context.go('/cart'),
             child: const Text('View Cart'),
           ),
         ),
@@ -406,32 +457,25 @@ class _OrderScreen extends ConsumerWidget {
   }
 }
 
-Future<void> _showCartSheet(BuildContext context, WidgetRef ref) async {
-  final currency = (int cents) => '₺ ${(cents / 100).toStringAsFixed(2)}';
-  await showModalBottomSheet<void>(
-    context: context,
-    showDragHandle: true,
-    isScrollControlled: true,
-    builder: (context) {
-      final cart = ref.watch(cartStoreProvider);
-      int pickup = 0; // 0 ASAP, 10 in 10m
-      return StatefulBuilder(
-        builder: (context, setState) {
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Your Cart',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 8),
-                  Flexible(
-                    child: ListView.builder(
-                      shrinkWrap: true,
+class _CartScreen extends ConsumerWidget {
+  const _CartScreen();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cart = ref.watch(cartStoreProvider);
+    final currency = (int cents) => '₺ ${(cents / 100).toStringAsFixed(2)}';
+    int pickup = 0; // 0 ASAP, 10 in 10m
+    return Scaffold(
+      appBar: AppBar(title: const Text('Cart')),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: cart.items.isEmpty
+                  ? const EmptyState(message: 'Your cart is empty')
+                  : ListView.builder(
                       itemCount: cart.items.length,
                       itemBuilder: (context, i) {
                         final ci = cart.items[i];
@@ -448,96 +492,36 @@ Future<void> _showCartSheet(BuildContext context, WidgetRef ref) async {
                         );
                       },
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text('Pickup time'),
-                  const SizedBox(height: 8),
-                  SegmentedButton<int>(
-                    segments: const [
-                      ButtonSegment<int>(value: 0, label: Text('ASAP')),
-                      ButtonSegment<int>(value: 10, label: Text('+10 min')),
-                    ],
-                    selected: {pickup},
-                    onSelectionChanged: (s) => setState(() => pickup = s.first),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'Total: ${currency(cart.totalCents)}',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      ElevatedButton(
-                        key: const ValueKey('btn-place-order'),
-                        onPressed: cart.items.isEmpty
-                            ? null
-                            : () {
-                                ref
-                                    .read(ordersStoreProvider.notifier)
-                                    .placeOrder(
-                                      ref.read(cartStoreProvider),
-                                      pickupMinutesFromNow: pickup,
-                                    );
-                                ref.read(cartStoreProvider.notifier).clear();
-                                Navigator.of(context).pop();
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Order placed')),
-                                );
-                              },
-                        child: const Text('Place order'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
             ),
-          );
-        },
-      );
-    },
-  );
-}
-
-class _StoreScreen extends StatelessWidget {
-  const _StoreScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    Future<void> callCafe() async {
-      final uri = Uri(scheme: 'tel', path: '+905550000000');
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri);
-      }
-    }
-
-    Future<void> openMap() async {
-      final uri = Uri.parse('https://maps.google.com/?q=123+Coffee+St');
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      }
-    }
-
-    return Scaffold(
-      appBar: AppBar(title: const Text('Store')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Address: 123 Coffee St'),
             const SizedBox(height: 8),
-            const Text('Hours: 8:00 - 20:00'),
+            const Text('Pickup time'),
             const SizedBox(height: 8),
-            const Text('Phone: +90 555 000 00 00'),
-            const SizedBox(height: 16),
+            StatefulBuilder(
+              builder: (context, setState) {
+                return SegmentedButton<int>(
+                  segments: const [
+                    ButtonSegment<int>(value: 0, label: Text('ASAP')),
+                    ButtonSegment<int>(value: 10, label: Text('+10 min')),
+                  ],
+                  selected: {pickup},
+                  onSelectionChanged: (s) => setState(() => pickup = s.first),
+                );
+              },
+            ),
+            const SizedBox(height: 12),
             Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                ElevatedButton(onPressed: callCafe, child: const Text('Call')),
-                const SizedBox(width: 12),
+                Text(
+                  'Total: ${currency(cart.totalCents)}',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
                 ElevatedButton(
-                  onPressed: openMap,
-                  child: const Text('Open Map'),
+                  key: const ValueKey('btn-checkout'),
+                  onPressed: cart.items.isEmpty
+                      ? null
+                      : () => context.push('/checkout'),
+                  child: const Text('Checkout'),
                 ),
               ],
             ),
@@ -555,7 +539,7 @@ class _MoreScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(authStoreProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('More')),
+      appBar: AppBar(title: const Text('Account')),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -585,7 +569,7 @@ class _MoreScreen extends ConsumerWidget {
               const SizedBox(height: 8),
               ElevatedButton(
                 onPressed: () => ref.read(authStoreProvider.notifier).signOut(),
-                child: const Text('Sign Out'),
+                child: const Text('Logout'),
               ),
             ],
           ],
@@ -620,9 +604,15 @@ void _showAdminPanel(BuildContext context, WidgetRef ref) {
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 8),
-            Text('Orders today: ${orders.length}'),
-            Text('Points issued today: $pointsIssued'),
-            Text('Points redeemed today: $pointsRedeemed'),
+            Text(
+              'Orders today: ${orders.length}',
+            ).applyDefaultTextStyle(context),
+            Text(
+              'Points issued today: $pointsIssued',
+            ).applyDefaultTextStyle(context),
+            Text(
+              'Points redeemed today: $pointsRedeemed',
+            ).applyDefaultTextStyle(context),
             const Divider(height: 24),
             const Text('Scan & Earn (enter user id then amount)'),
             const SizedBox(height: 8),
@@ -874,7 +864,6 @@ class _CampaignsFormState extends ConsumerState<_CampaignsForm> {
   }
 }
 
-// _OrdersHistoryScreen was unused; removed for now.
 class _OrdersHistoryScreen extends ConsumerWidget {
   const _OrdersHistoryScreen();
 
@@ -897,11 +886,217 @@ class _OrdersHistoryScreen extends ConsumerWidget {
                   trailing: Text(
                     '₺ ${(o.totalCents / 100).toStringAsFixed(2)}',
                   ),
+                  onTap: () => context.push('/order/${o.id}/tracker'),
                 );
               },
             ),
     );
   }
+}
+
+class _CheckoutScreen extends ConsumerStatefulWidget {
+  const _CheckoutScreen();
+  @override
+  ConsumerState<_CheckoutScreen> createState() => _CheckoutScreenState();
+}
+
+class _CheckoutScreenState extends ConsumerState<_CheckoutScreen> {
+  bool _loading = false;
+  String? _error;
+
+  Future<void> _pay(BuildContext context) async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final cart = ref.read(cartStoreProvider);
+      if (cart.items.isEmpty) {
+        setState(() => _error = 'Cart is empty');
+        return;
+      }
+      final cartPayload = {
+        'items': [
+          for (final it in cart.items)
+            {
+              'id': it.item.id,
+              'name': it.item.name,
+              'qty': it.qty,
+              'price_cents': it.item.priceCents,
+              if (it.note != null) 'note': it.note,
+            },
+        ],
+        'subtotal_cents': cart.totalCents,
+      };
+      final intent = await FunctionsClient.instance.createPaymentIntent({
+        'cart': cartPayload,
+        'store_id': 'default',
+      });
+      // Normally: handoff to provider SDK using client_secret/provider_params here
+      final confirm = await FunctionsClient.instance.confirmCheckout({
+        'intent_id': intent['client_secret'] ?? 'stub',
+      });
+      final orderId =
+          (confirm['order_id'] as String?) ??
+          DateTime.now().millisecondsSinceEpoch.toString();
+      ref.read(cartStoreProvider.notifier).clear();
+      if (mounted) {
+        context.go('/order/$orderId/tracker');
+      }
+    } catch (e) {
+      setState(() => _error = 'Checkout failed');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Checkout')),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Payment method UI will be here (Stripe/iyzico).'),
+            const SizedBox(height: 12),
+            if (_error != null)
+              Text(
+                _error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            const SizedBox(height: 8),
+            FilledButton(
+              onPressed: _loading ? null : () => _pay(context),
+              child: _loading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Pay'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OrderTrackerScreen extends StatelessWidget {
+  const _OrderTrackerScreen({required this.orderId});
+  final String orderId;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Order Tracker')),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Order: $orderId'),
+            const SizedBox(height: 12),
+            const ListTile(
+              leading: Icon(Icons.looks_one),
+              title: Text('Received'),
+              subtitle: Text('Timestamp…'),
+            ),
+            const ListTile(
+              leading: Icon(Icons.looks_two),
+              title: Text('In prep'),
+              subtitle: Text('Timestamp…'),
+            ),
+            const ListTile(
+              leading: Icon(Icons.looks_3),
+              title: Text('Ready'),
+              subtitle: Text('Timestamp…'),
+            ),
+            const SizedBox(height: 12),
+            const Text('Pickup code: 123456'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReceiptScreen extends StatelessWidget {
+  const _ReceiptScreen({required this.orderId});
+  final String orderId;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Receipt')),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('Receipt for order $orderId'),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: () {
+                // Placeholder for Storage PDF open
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Open receipt PDF from Storage'),
+                  ),
+                );
+              },
+              child: const Text('Open PDF'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StoreSelectScreen extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Select Store')),
+      body: ListView(
+        children: const [
+          ListTile(title: Text('Nearest store • 0.5 km • Open now')),
+          ListTile(title: Text('Downtown • 2.1 km • Closes 22:00')),
+        ],
+      ),
+    );
+  }
+}
+
+extension on Text {
+  Text applyDefaultTextStyle(BuildContext context) =>
+      Text(data ?? '', style: Theme.of(context).textTheme.bodyMedium);
+}
+
+/// A simple dialog-like page to present modal content.
+class DialogPage extends CustomTransitionPage<void> {
+  DialogPage({required Widget child})
+    : super(
+        child: child,
+        fullscreenDialog: true,
+        barrierDismissible: true,
+        transitionDuration: const Duration(milliseconds: 260),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+          );
+          return SlideTransition(
+            position: Tween<Offset>(
+              begin: const Offset(0, 0.08),
+              end: Offset.zero,
+            ).animate(curved),
+            child: FadeTransition(opacity: curved, child: child),
+          );
+        },
+      );
 }
 
 class _MyCardScreen extends ConsumerWidget {
@@ -912,7 +1107,7 @@ class _MyCardScreen extends ConsumerWidget {
     final userId = ref.watch(fakeUserIdProvider);
     final loyalty = ref.watch(loyaltyStoreProvider);
     return Scaffold(
-      appBar: AppBar(title: const Text('My Card')),
+      appBar: AppBar(title: const Text('Loyalty')),
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -1021,4 +1216,36 @@ Future<void> _showRedeem(BuildContext context, WidgetRef ref) async {
       );
     },
   );
+}
+
+class _LastOrdersList extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(ordersStoreProvider); // watch for updates
+    final last = ref.read(ordersStoreProvider.notifier).lastOrders(limit: 3);
+    if (last.isEmpty) {
+      return const EmptyState(message: 'No recent orders');
+    }
+    String currency(int cents) => '₺ ${(cents / 100).toStringAsFixed(2)}';
+    return Column(
+      children: [
+        for (final o in last)
+          Card(
+            child: ListTile(
+              title: Text(
+                '#${o.id.substring(o.id.length - 6)} • ${o.status.name}',
+              ),
+              subtitle: Text(
+                '${o.items.length} items • ${currency(o.totalCents)}',
+              ),
+              trailing: TextButton(
+                onPressed: () =>
+                    ref.read(ordersStoreProvider.notifier).reorder(o),
+                child: const Text('Reorder'),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
 }
