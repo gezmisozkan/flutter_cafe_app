@@ -101,20 +101,23 @@ class MenuStore extends StateNotifier<MenuState> {
   }
 
   Future<void> refreshMenu() async {
-    // Prefer Firestore if available
-    final fs = FirebaseFirestore.instance;
-    try {
-      await _loadFromFirestore(fs);
-      return;
-    } catch (_) {}
-
-    final client = _ref.read(supabaseClientProvider);
-    if (client != null) {
-      await _maybeLoadFromSupabase();
-      return;
-    }
+    // Use mock data for UI testing
     state = _seed();
     await _persist(state);
+
+    // Uncomment below to re-enable Firebase/Supabase
+    // // Prefer Firestore if available
+    // final fs = FirebaseFirestore.instance;
+    // try {
+    //   await _loadFromFirestore(fs);
+    //   return;
+    // } catch (_) {}
+
+    // final client = _ref.read(supabaseClientProvider);
+    // if (client != null) {
+    //   await _maybeLoadFromSupabase();
+    //   return;
+    // }
   }
 
   Future<void> _persist(MenuState s) async {
@@ -180,11 +183,13 @@ class MenuStore extends StateNotifier<MenuState> {
   }
 
   Future<void> _maybeLoadFromFirestore() async {
-    try {
-      await _loadFromFirestore(FirebaseFirestore.instance);
-    } catch (_) {
-      // ignore
-    }
+    // Disabled for UI testing
+    return;
+    // try {
+    //   await _loadFromFirestore(FirebaseFirestore.instance);
+    // } catch (_) {
+    //   // ignore
+    // }
   }
 
   Future<void> _loadFromFirestore(FirebaseFirestore fs) async {

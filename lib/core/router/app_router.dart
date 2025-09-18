@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+// Firebase imports disabled for UI testing
+// import 'package:cloud_firestore/cloud_firestore.dart';
+// import 'package:firebase_storage/firebase_storage.dart';
+// import 'package:url_launcher/url_launcher.dart';
 import '../../widgets/qr_box.dart';
 import '../../features/loyalty/data/loyalty_store.dart';
 import '../../features/menu/data/menu_store.dart';
@@ -12,8 +16,11 @@ import '../../features/auth/ui/auth_screens.dart';
 import '../../features/auth/data/auth_store.dart';
 import '../../features/menu/ui/admin_menu.dart';
 import '../../features/admin/data/campaigns_store.dart';
+import '../../features/profile/data/profile_store.dart';
 import '../../widgets/empty_state.dart';
 import '../../common/services/functions_client.dart';
+import '../../common/services/store_service.dart';
+import '../../common/models/store.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   return GoRouter(
@@ -156,6 +163,9 @@ class _HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final campaigns = ref.watch(campaignsStoreProvider);
+    final storeState = ref.watch(storeProvider);
+    final profile = ref.watch(profileStoreProvider);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Home'),
@@ -205,53 +215,73 @@ class _HomeScreen extends ConsumerWidget {
       ),
       body: ListView(
         children: [
-          if (campaigns.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: EmptyState(
-                message: 'No campaigns right now',
-                icon: Icons.campaign_outlined,
-              ),
-            )
-          else
-            SizedBox(
-              height: 140,
-              child: ListView.separated(
-                padding: const EdgeInsets.all(16),
-                scrollDirection: Axis.horizontal,
-                itemBuilder: (context, i) {
-                  final c = campaigns[i];
-                  return SizedBox(
-                    width: 240,
-                    child: Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text(
-                              c.title,
-                              style: Theme.of(context).textTheme.titleMedium,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              c.body,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
+          // Greeting section
+          TweenAnimationBuilder<double>(
+            duration: const Duration(milliseconds: 600),
+            tween: Tween(begin: 0.0, end: 1.0),
+            builder: (context, value, child) {
+              return Opacity(
+                opacity: value,
+                child: Transform.translate(
+                  offset: Offset(0, 20 * (1 - value)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _getGreeting(profile?.name),
+                          style: Theme.of(context).textTheme.headlineSmall,
                         ),
-                      ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'What would you like to order today?',
+                          style: Theme.of(context).textTheme.bodyLarge
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                      ],
                     ),
-                  );
-                },
-                separatorBuilder: (_, __) => const SizedBox(width: 12),
-                itemCount: campaigns.length,
-              ),
+                  ),
+                ),
+              );
+            },
+          ),
+
+          // Nearest store card
+          if (storeState.nearestStore != null)
+            TweenAnimationBuilder<double>(
+              duration: const Duration(milliseconds: 800),
+              tween: Tween(begin: 0.0, end: 1.0),
+              builder: (context, value, child) {
+                return Opacity(
+                  opacity: value,
+                  child: Transform.translate(
+                    offset: Offset(0, 30 * (1 - value)),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: _NearestStoreCard(store: storeState.nearestStore!),
+                    ),
+                  ),
+                );
+              },
             ),
+
+          const SizedBox(height: 16),
+
+          // Promo banner
+          if (campaigns.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _PromoBanner(campaigns: campaigns),
+            ),
+
+          const SizedBox(height: 16),
+
+          // Action buttons
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
@@ -259,16 +289,18 @@ class _HomeScreen extends ConsumerWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: ElevatedButton(
+                      child: ElevatedButton.icon(
                         onPressed: () => context.go('/order'),
-                        child: const Text('Order'),
+                        icon: const Icon(Icons.shopping_bag_outlined),
+                        label: const Text('Order Now'),
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: ElevatedButton(
+                      child: OutlinedButton.icon(
                         onPressed: () => context.go('/loyalty'),
-                        child: const Text('Loyalty'),
+                        icon: const Icon(Icons.card_membership_outlined),
+                        label: const Text('Loyalty'),
                       ),
                     ),
                   ],
@@ -276,15 +308,19 @@ class _HomeScreen extends ConsumerWidget {
                 const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
-                  child: OutlinedButton(
+                  child: OutlinedButton.icon(
                     onPressed: () => context.go('/account'),
-                    child: const Text('Account'),
+                    icon: const Icon(Icons.person_outline),
+                    label: const Text('Account'),
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 8),
+
+          const SizedBox(height: 24),
+
+          // Order again section
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
@@ -299,10 +335,28 @@ class _HomeScreen extends ConsumerWidget {
               ],
             ),
           ),
+
           const SizedBox(height: 24),
         ],
       ),
     );
+  }
+
+  String _getGreeting(String? name) {
+    final hour = DateTime.now().hour;
+    String timeGreeting;
+    if (hour < 12) {
+      timeGreeting = 'Good morning';
+    } else if (hour < 17) {
+      timeGreeting = 'Good afternoon';
+    } else {
+      timeGreeting = 'Good evening';
+    }
+
+    if (name != null && name.isNotEmpty) {
+      return '$timeGreeting, $name!';
+    }
+    return '$timeGreeting!';
   }
 }
 
@@ -370,73 +424,127 @@ class _OrderScreen extends ConsumerWidget {
           Expanded(
             child: menu.categories.isEmpty
                 ? const EmptyState(message: 'No menu available')
-                : ListView(
-                    children: [
-                      for (final c in menu.categories)
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 8,
-                              ),
-                              child: Text(
-                                c.name,
-                                style: Theme.of(context).textTheme.titleMedium,
+                : ListView.builder(
+                    itemCount: menu.categories.length,
+                    itemBuilder: (context, categoryIndex) {
+                      final c = menu.categories[categoryIndex];
+                      final items =
+                          menu.itemsByCategory[c.id] ?? const <MenuItemModel>[];
+
+                      return TweenAnimationBuilder<double>(
+                        duration: Duration(
+                          milliseconds: 600 + (categoryIndex * 100),
+                        ),
+                        tween: Tween(begin: 0.0, end: 1.0),
+                        builder: (context, value, child) {
+                          return Opacity(
+                            opacity: value,
+                            child: Transform.translate(
+                              offset: Offset(0, 20 * (1 - value)),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 8,
+                                    ),
+                                    child: Text(
+                                      c.name,
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.titleMedium,
+                                    ),
+                                  ),
+                                  for (
+                                    int itemIndex = 0;
+                                    itemIndex < items.length;
+                                    itemIndex++
+                                  )
+                                    TweenAnimationBuilder<double>(
+                                      duration: Duration(
+                                        milliseconds:
+                                            800 +
+                                            (categoryIndex * 100) +
+                                            (itemIndex * 50),
+                                      ),
+                                      tween: Tween(begin: 0.0, end: 1.0),
+                                      builder: (context, itemValue, child) {
+                                        final m = items[itemIndex];
+                                        return Opacity(
+                                          opacity: itemValue,
+                                          child: Transform.translate(
+                                            offset: Offset(
+                                              0,
+                                              10 * (1 - itemValue),
+                                            ),
+                                            child: ListTile(
+                                              onTap: () => context.push(
+                                                '/product/${m.id}',
+                                              ),
+                                              title: Text(m.name),
+                                              subtitle: Text(
+                                                currency(m.priceCents),
+                                              ),
+                                              trailing: IconButton(
+                                                icon: const Icon(
+                                                  Icons.add_circle_outline,
+                                                ),
+                                                onPressed: () {
+                                                  try {
+                                                    ref
+                                                        .read(
+                                                          cartStoreProvider
+                                                              .notifier,
+                                                        )
+                                                        .add(m);
+                                                    ScaffoldMessenger.of(
+                                                      context,
+                                                    ).showSnackBar(
+                                                      const SnackBar(
+                                                        content: Text(
+                                                          'Added to cart',
+                                                        ),
+                                                      ),
+                                                    );
+                                                  } catch (e) {
+                                                    ScaffoldMessenger.of(
+                                                      context,
+                                                    ).showSnackBar(
+                                                      SnackBar(
+                                                        content: const Text(
+                                                          'Failed to add to cart',
+                                                        ),
+                                                        action: SnackBarAction(
+                                                          label: 'Retry',
+                                                          onPressed: () {
+                                                            try {
+                                                              ref
+                                                                  .read(
+                                                                    cartStoreProvider
+                                                                        .notifier,
+                                                                  )
+                                                                  .add(m);
+                                                            } catch (_) {}
+                                                          },
+                                                        ),
+                                                      ),
+                                                    );
+                                                  }
+                                                },
+                                              ),
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                ],
                               ),
                             ),
-                            for (final m
-                                in (menu.itemsByCategory[c.id] ??
-                                    const <MenuItemModel>[]))
-                              ListTile(
-                                onTap: () => context.push('/product/${m.id}'),
-                                title: Text(m.name),
-                                subtitle: Text(currency(m.priceCents)),
-                                trailing: IconButton(
-                                  icon: const Icon(Icons.add_circle_outline),
-                                  onPressed: () {
-                                    try {
-                                      ref
-                                          .read(cartStoreProvider.notifier)
-                                          .add(m);
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Added to cart'),
-                                        ),
-                                      );
-                                    } catch (e) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: const Text(
-                                            'Failed to add to cart',
-                                          ),
-                                          action: SnackBarAction(
-                                            label: 'Retry',
-                                            onPressed: () {
-                                              try {
-                                                ref
-                                                    .read(
-                                                      cartStoreProvider
-                                                          .notifier,
-                                                    )
-                                                    .add(m);
-                                              } catch (_) {}
-                                            },
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                  },
-                                ),
-                              ),
-                          ],
-                        ),
-                    ],
+                          );
+                        },
+                      );
+                    },
                   ),
           ),
         ],
@@ -494,6 +602,52 @@ class _CartScreen extends ConsumerWidget {
                     ),
             ),
             const SizedBox(height: 8),
+
+            // Rewards section
+            if (cart.items.isNotEmpty) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Rewards'),
+                  TextButton(
+                    onPressed: () => _showRewardsDialog(context, ref),
+                    child: const Text('Apply Reward'),
+                  ),
+                ],
+              ),
+              if (cart.appliedReward != null)
+                Card(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  child: ListTile(
+                    leading: Icon(
+                      Icons.card_giftcard,
+                      color: Theme.of(context).colorScheme.onPrimaryContainer,
+                    ),
+                    title: Text(
+                      cart.appliedReward!.title,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                    subtitle: Text(
+                      '${cart.appliedReward!.costPoints} points',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                    trailing: IconButton(
+                      onPressed: () =>
+                          ref.read(cartStoreProvider.notifier).removeReward(),
+                      icon: Icon(
+                        Icons.close,
+                        color: Theme.of(context).colorScheme.onPrimaryContainer,
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 8),
+            ],
+
             const Text('Pickup time'),
             const SizedBox(height: 8),
             StatefulBuilder(
@@ -509,6 +663,36 @@ class _CartScreen extends ConsumerWidget {
               },
             ),
             const SizedBox(height: 12),
+
+            // Order summary
+            if (cart.items.isNotEmpty) ...[
+              const Divider(),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Subtotal'),
+                  Text(currency(cart.subtotalCents)),
+                ],
+              ),
+              if (cart.appliedReward != null)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Reward: ${cart.appliedReward!.title}'),
+                    Text('-${currency(cart.appliedReward!.costPoints)}'),
+                  ],
+                ),
+              if (cart.discountCents > 0)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text('Discount: ${cart.promoCode ?? 'Promo'}'),
+                    Text('-${currency(cart.discountCents)}'),
+                  ],
+                ),
+              const Divider(),
+            ],
+
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -530,6 +714,82 @@ class _CartScreen extends ConsumerWidget {
       ),
     );
   }
+}
+
+Future<void> _showRewardsDialog(BuildContext context, WidgetRef ref) async {
+  final loyalty = ref.read(loyaltyStoreProvider);
+  final cart = ref.read(cartStoreProvider);
+
+  await showModalBottomSheet<void>(
+    context: context,
+    showDragHandle: true,
+    builder: (context) {
+      return SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'Available Rewards',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+            ),
+            if (loyalty.rewards.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text('No rewards available'),
+              )
+            else
+              ListView.builder(
+                shrinkWrap: true,
+                itemCount: loyalty.rewards.length,
+                itemBuilder: (context, index) {
+                  final reward = loyalty.rewards[index];
+                  final canAfford = loyalty.points >= reward.costPoints;
+                  final isApplied = cart.appliedReward?.id == reward.id;
+
+                  return ListTile(
+                    leading: Icon(
+                      isApplied ? Icons.check_circle : Icons.card_giftcard,
+                      color: isApplied
+                          ? Theme.of(context).colorScheme.primary
+                          : canAfford
+                          ? Theme.of(context).colorScheme.onSurface
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    title: Text(reward.title),
+                    subtitle: Text('${reward.costPoints} points'),
+                    trailing: isApplied
+                        ? TextButton(
+                            onPressed: () {
+                              ref
+                                  .read(cartStoreProvider.notifier)
+                                  .removeReward();
+                              Navigator.of(context).pop();
+                            },
+                            child: const Text('Remove'),
+                          )
+                        : TextButton(
+                            onPressed: canAfford
+                                ? () {
+                                    ref
+                                        .read(cartStoreProvider.notifier)
+                                        .applyReward(reward);
+                                    Navigator.of(context).pop();
+                                  }
+                                : null,
+                            child: const Text('Apply'),
+                          ),
+                  );
+                },
+              ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      );
+    },
+  );
 }
 
 class _MoreScreen extends ConsumerWidget {
@@ -984,48 +1244,196 @@ class _CheckoutScreenState extends ConsumerState<_CheckoutScreen> {
   }
 }
 
-class _OrderTrackerScreen extends StatelessWidget {
+class _OrderTrackerScreen extends ConsumerWidget {
   const _OrderTrackerScreen({required this.orderId});
   final String orderId;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Scaffold(
       appBar: AppBar(title: const Text('Order Tracker')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Order: $orderId'),
-            const SizedBox(height: 12),
-            const ListTile(
-              leading: Icon(Icons.looks_one),
-              title: Text('Received'),
-              subtitle: Text('Timestamp…'),
+      body: _buildMockOrderTracker(context),
+    );
+  }
+
+  Widget _buildMockOrderTracker(BuildContext context) {
+    final now = DateTime.now();
+    final createdAt = now.subtract(const Duration(minutes: 15));
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Order details card
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Order #${orderId.substring(orderId.length - 6)}',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  Text('Total: ₺ 12.50'),
+                  Text('Placed: ${_formatDateTime(createdAt)}'),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Pickup Code: 123456',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
             ),
-            const ListTile(
-              leading: Icon(Icons.looks_two),
-              title: Text('In prep'),
-              subtitle: Text('Timestamp…'),
-            ),
-            const ListTile(
-              leading: Icon(Icons.looks_3),
-              title: Text('Ready'),
-              subtitle: Text('Timestamp…'),
-            ),
-            const SizedBox(height: 12),
-            const Text('Pickup code: 123456'),
-          ],
-        ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Order status steps
+          Text('Order Status', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 16),
+
+          _StatusStep(
+            step: 1,
+            title: 'Order Received',
+            isCompleted: true,
+            timestamp: createdAt,
+          ),
+          _StatusStep(
+            step: 2,
+            title: 'In Preparation',
+            isCompleted: false,
+            isActive: true,
+          ),
+          _StatusStep(
+            step: 3,
+            title: 'Ready for Pickup',
+            isCompleted: false,
+            isActive: false,
+          ),
+
+          const SizedBox(height: 24),
+
+          // Order items
+          Text('Order Items', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+
+          ListTile(
+            title: const Text('Espresso'),
+            subtitle: const Text('Qty: 1'),
+            trailing: const Text('₺ 4.50'),
+          ),
+          ListTile(
+            title: const Text('Croissant'),
+            subtitle: const Text('Qty: 2'),
+            trailing: const Text('₺ 8.00'),
+          ),
+        ],
       ),
     );
   }
+
+  String _formatDateTime(DateTime dateTime) {
+    return '${dateTime.day}/${dateTime.month}/${dateTime.year} at ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+  }
 }
 
-class _ReceiptScreen extends StatelessWidget {
+class _StatusStep extends StatelessWidget {
+  const _StatusStep({
+    required this.step,
+    required this.title,
+    required this.isCompleted,
+    this.isActive = false,
+    this.timestamp,
+  });
+
+  final int step;
+  final String title;
+  final bool isCompleted;
+  final bool isActive;
+  final DateTime? timestamp;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        children: [
+          Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: isCompleted
+                  ? Theme.of(context).colorScheme.primary
+                  : isActive
+                  ? Theme.of(context).colorScheme.primaryContainer
+                  : Theme.of(context).colorScheme.surfaceVariant,
+              shape: BoxShape.circle,
+            ),
+            child: Center(
+              child: isCompleted
+                  ? const Icon(Icons.check, color: Colors.white, size: 20)
+                  : Text(
+                      step.toString(),
+                      style: TextStyle(
+                        color: isActive
+                            ? Theme.of(context).colorScheme.onPrimaryContainer
+                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: isCompleted || isActive
+                        ? Theme.of(context).colorScheme.onSurface
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontWeight: isActive ? FontWeight.bold : null,
+                  ),
+                ),
+                if (timestamp != null)
+                  Text(
+                    _formatDateTime(timestamp!),
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDateTime(DateTime dateTime) {
+    return '${dateTime.day}/${dateTime.month}/${dateTime.year} at ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+class _ReceiptScreen extends ConsumerStatefulWidget {
   const _ReceiptScreen({required this.orderId});
   final String orderId;
+
+  @override
+  ConsumerState<_ReceiptScreen> createState() => _ReceiptScreenState();
+}
+
+class _ReceiptScreenState extends ConsumerState<_ReceiptScreen> {
+  bool _loading = false;
+  String? _error;
 
   @override
   Widget build(BuildContext context) {
@@ -1035,37 +1443,195 @@ class _ReceiptScreen extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text('Receipt for order $orderId'),
+            Icon(
+              Icons.receipt_long,
+              size: 64,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Receipt for order #${widget.orderId.substring(widget.orderId.length - 6)}',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
             const SizedBox(height: 8),
-            OutlinedButton(
-              onPressed: () {
-                // Placeholder for Storage PDF open
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Open receipt PDF from Storage'),
+            Text(
+              'Your receipt is ready for download',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 24),
+            if (_loading)
+              const CircularProgressIndicator()
+            else if (_error != null)
+              Column(
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    color: Theme.of(context).colorScheme.error,
+                    size: 48,
                   ),
-                );
-              },
-              child: const Text('Open PDF'),
+                  const SizedBox(height: 8),
+                  Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: _downloadReceipt,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              )
+            else
+              ElevatedButton.icon(
+                onPressed: _downloadReceipt,
+                icon: const Icon(Icons.download),
+                label: const Text('Download PDF'),
+              ),
+            const SizedBox(height: 16),
+            OutlinedButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
             ),
           ],
         ),
       ),
     );
   }
+
+  Future<void> _downloadReceipt() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      // Mock receipt for UI testing
+      await Future<void>.delayed(const Duration(seconds: 1));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Mock receipt opened successfully')),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _error = 'Failed to download receipt: ${e.toString()}';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+      }
+    }
+
+    // Uncomment below to re-enable Firebase Storage
+    // try {
+    //   final storage = FirebaseStorage.instance;
+    //   final receiptRef = storage.ref('receipts/${widget.orderId}.pdf');
+
+    //   // Get download URL
+    //   final downloadUrl = await receiptRef.getDownloadURL();
+
+    //   // Open the PDF using url_launcher
+    //   final uri = Uri.parse(downloadUrl);
+    //   if (await canLaunchUrl(uri)) {
+    //     await launchUrl(uri, mode: LaunchMode.externalApplication);
+    //     if (mounted) {
+    //       ScaffoldMessenger.of(context).showSnackBar(
+    //         const SnackBar(content: Text('Receipt opened successfully')),
+    //       );
+    //     }
+    //   } else {
+    //     throw Exception('Could not open PDF');
+    //   }
+    // } catch (e) {
+    //   setState(() {
+    //     _error = 'Failed to download receipt: ${e.toString()}';
+    //   });
+    // } finally {
+    //   if (mounted) {
+    //     setState(() {
+    //       _loading = false;
+    //     });
+    //   }
+    // }
+  }
 }
 
-class _StoreSelectScreen extends StatelessWidget {
+class _StoreSelectScreen extends ConsumerWidget {
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final storeState = ref.watch(storeProvider);
+    final userLocation = storeState.userLocation;
+
     return Scaffold(
       appBar: AppBar(title: const Text('Select Store')),
-      body: ListView(
-        children: const [
-          ListTile(title: Text('Nearest store • 0.5 km • Open now')),
-          ListTile(title: Text('Downtown • 2.1 km • Closes 22:00')),
-        ],
-      ),
+      body: storeState.stores.isEmpty
+          ? const Center(child: CircularProgressIndicator())
+          : ListView.builder(
+              itemCount: storeState.stores.length,
+              itemBuilder: (context, index) {
+                final store = storeState.stores[index];
+                final distance = userLocation != null
+                    ? store.distanceFrom(
+                        userLocation.latitude,
+                        userLocation.longitude,
+                      )
+                    : null;
+
+                return ListTile(
+                  leading: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: store.isOpen
+                          ? Theme.of(context).colorScheme.primaryContainer
+                          : Theme.of(context).colorScheme.surfaceVariant,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      Icons.store_mall_directory_outlined,
+                      color: store.isOpen
+                          ? Theme.of(context).colorScheme.onPrimaryContainer
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  title: Text(store.name),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(store.address),
+                      const SizedBox(height: 2),
+                      Row(
+                        children: [
+                          if (distance != null) ...[
+                            Text('${distance.toStringAsFixed(1)} km'),
+                            const Text(' • '),
+                          ],
+                          Text(store.statusText),
+                        ],
+                      ),
+                    ],
+                  ),
+                  trailing: storeState.selectedStoreId == store.id
+                      ? Icon(
+                          Icons.check_circle,
+                          color: Theme.of(context).colorScheme.primary,
+                        )
+                      : null,
+                  onTap: () {
+                    ref.read(storeProvider.notifier).selectStore(store.id);
+                    Navigator.of(context).pop();
+                  },
+                );
+              },
+            ),
     );
   }
 }
@@ -1216,6 +1782,142 @@ Future<void> _showRedeem(BuildContext context, WidgetRef ref) async {
       );
     },
   );
+}
+
+class _NearestStoreCard extends StatelessWidget {
+  const _NearestStoreCard({required this.store});
+
+  final Store store;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: store.isOpen
+                    ? Theme.of(context).colorScheme.primaryContainer
+                    : Theme.of(context).colorScheme.surfaceVariant,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.store_mall_directory_outlined,
+                color: store.isOpen
+                    ? Theme.of(context).colorScheme.onPrimaryContainer
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    store.name,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    store.address,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    store.statusText,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: store.isOpen
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).colorScheme.error,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              onPressed: () => context.push('/store/select'),
+              icon: const Icon(Icons.arrow_forward_ios),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PromoBanner extends StatelessWidget {
+  const _PromoBanner({required this.campaigns});
+
+  final List<Campaign> campaigns;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 120,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Theme.of(context).colorScheme.primary,
+            Theme.of(context).colorScheme.primaryContainer,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: PageView.builder(
+        itemCount: campaigns.length,
+        itemBuilder: (context, index) {
+          final campaign = campaigns[index];
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  campaign.title,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    color: Theme.of(context).colorScheme.onPrimary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  campaign.body,
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: Theme.of(context).colorScheme.onPrimary,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const Spacer(),
+                Align(
+                  alignment: Alignment.bottomRight,
+                  child: TextButton(
+                    onPressed: () => context.go('/order'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                    ),
+                    child: const Text('Order Now'),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
 
 class _LastOrdersList extends ConsumerWidget {
